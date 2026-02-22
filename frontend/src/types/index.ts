@@ -205,3 +205,81 @@ export interface CreditBundle {
   createdAt: string;
   updatedAt: string;
 }
+
+// --- System Health ---
+
+export interface SystemNode {
+  id: string;
+  machineId: string;
+  hostname: string;
+  status: 'active' | 'stale';
+  startedAt: string;
+  lastSeen: string;
+  version: string;
+  goVersion: string;
+}
+
+export interface CPUMetrics {
+  usagePercent: number;
+  numCpu: number;
+}
+
+export interface MemoryMetrics {
+  usedBytes: number;
+  totalBytes: number;
+  usedPercent: number;
+}
+
+export interface DiskMetrics {
+  usedBytes: number;
+  totalBytes: number;
+  usedPercent: number;
+}
+
+export interface NetworkMetrics {
+  bytesSent: number;
+  bytesRecv: number;
+}
+
+export interface HTTPMetrics {
+  requestCount: number;
+  latencyP50: number;
+  latencyP95: number;
+  latencyP99: number;
+  statusCodes: Record<string, number>;
+  errorRate4xx: number;
+  errorRate5xx: number;
+}
+
+export interface MongoMetrics {
+  currentConnections: number;
+  availableConnections: number;
+  dataSizeBytes: number;
+  indexSizeBytes: number;
+  collections: number;
+  opCounters: Record<string, number>;
+}
+
+export interface GoRuntimeMetrics {
+  numGoroutine: number;
+  heapAlloc: number;
+  heapSys: number;
+  gcPauseNs: number;
+  numGC: number;
+}
+
+export interface SystemMetric {
+  id: string;
+  nodeId: string;
+  timestamp: string;
+  cpu: CPUMetrics;
+  memory: MemoryMetrics;
+  disk: DiskMetrics;
+  network: NetworkMetrics;
+  http: HTTPMetrics;
+  mongo: MongoMetrics;
+  goRuntime: GoRuntimeMetrics;
+}
+
+export type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d';
+export type NodeFilterMode = 'aggregate' | 'all' | 'single';

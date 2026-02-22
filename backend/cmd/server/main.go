@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"lastsaas/internal/db"
 	"lastsaas/internal/email"
 	"lastsaas/internal/events"
+	"lastsaas/internal/health"
 	"lastsaas/internal/planstore"
 	"lastsaas/internal/middleware"
 	"lastsaas/internal/models"
@@ -26,6 +28,30 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 )
+
+// spaHandler serves a single-page application from a static directory.
+// For files that exist on disk, it serves them directly. For all other
+// paths it serves index.html so the SPA router can handle them.
+type spaHandler struct {
+	staticPath string
+	indexPath  string
+}
+
+func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := filepath.Join(h.staticPath, filepath.Clean(r.URL.Path))
+
+	fi, err := os.Stat(path)
+	if os.IsNotExist(err) || (err == nil && fi.IsDir()) {
+		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
+		return
+	}
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
+}
 
 func main() {
 	config.LoadEnvFile()
@@ -116,6 +142,12 @@ func main() {
 	tenantMiddleware := middleware.NewTenantMiddleware(database)
 	rateLimiter := middleware.NewRateLimiter()
 	defer rateLimiter.Stop()
+	metricsCollector := middleware.NewMetricsCollector()
+
+	// Initialize health monitoring
+	healthService := health.New(database, metricsCollector, cfgStore.Get)
+	healthService.Start()
+	defer healthService.Stop()
 
 	// Initialize handlers
 	bootstrapHandler := handlers.NewBootstrapHandler(database)
@@ -127,6 +159,7 @@ func main() {
 	configHandler := handlers.NewConfigHandler(database, cfgStore, sysLogger)
 	plansHandler := handlers.NewPlansHandler(database, sysLogger)
 	bundlesHandler := handlers.NewBundlesHandler(database, sysLogger)
+	healthHandler := handlers.NewHealthHandler(healthService)
 
 	// Setup router
 	router := mux.NewRouter()
@@ -264,6 +297,9 @@ func main() {
 	adminAPI.HandleFunc("/plans/{planId}", plansHandler.GetPlan).Methods("GET")
 	adminAPI.HandleFunc("/entitlement-keys", plansHandler.ListEntitlementKeys).Methods("GET")
 	adminAPI.HandleFunc("/credit-bundles", bundlesHandler.ListBundles).Methods("GET")
+	adminAPI.HandleFunc("/health/nodes", healthHandler.ListNodes).Methods("GET")
+	adminAPI.HandleFunc("/health/metrics", healthHandler.GetMetrics).Methods("GET")
+	adminAPI.HandleFunc("/health/current", healthHandler.GetCurrent).Methods("GET")
 
 	// Owner-only admin actions
 	adminOwner := adminAPI.PathPrefix("").Subrouter()
@@ -285,6 +321,13 @@ func main() {
 	adminOwner.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.UpdateBundle).Methods("PUT")
 	adminOwner.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.DeleteBundle).Methods("DELETE")
 
+	// Serve frontend static files in production
+	if cfg.Frontend.StaticDir != "" {
+		log.Printf("Serving frontend from %s", cfg.Frontend.StaticDir)
+		spa := spaHandler{staticPath: cfg.Frontend.StaticDir, indexPath: "index.html"}
+		router.PathPrefix("/").Handler(spa)
+	}
+
 	// CORS
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{cfg.Frontend.URL},
@@ -294,8 +337,8 @@ func main() {
 		MaxAge:           86400,
 	})
 
-	// Wrap with security headers + CORS
-	handler := middleware.SecurityHeaders(c.Handler(router))
+	// Wrap with security headers + CORS + metrics
+	handler := middleware.SecurityHeaders(c.Handler(metricsCollector.Middleware(router)))
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle } from '../types';
+import type { AuthResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -163,6 +163,12 @@ export const adminApi = {
     api.put<CreditBundle>(`/admin/credit-bundles/${id}`, data).then(r => r.data),
   deleteBundle: (id: string) =>
     api.delete(`/admin/credit-bundles/${id}`).then(r => r.data),
+  listHealthNodes: () =>
+    api.get<{ nodes: SystemNode[] }>('/admin/health/nodes').then(r => r.data),
+  getHealthMetrics: (params?: { node?: string; range?: string }) =>
+    api.get<{ metrics: SystemMetric[]; from: string; to: string }>('/admin/health/metrics', { params }).then(r => r.data),
+  getHealthCurrent: () =>
+    api.get<{ metrics: SystemMetric[] }>('/admin/health/current').then(r => r.data),
 };
 
 // --- Plans (public, authenticated) ---

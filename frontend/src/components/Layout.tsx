@@ -9,7 +9,7 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, logout, memberships } = useAuth();
-  const { activeTenant, setActiveTenant, isRootTenant } = useTenant();
+  const { activeTenant, setActiveTenant } = useTenant();
   const [showTenantMenu, setShowTenantMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showCredits, setShowCredits] = useState(false);

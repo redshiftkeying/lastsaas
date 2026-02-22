@@ -36,6 +36,7 @@ import AdminUserProfilePage from './pages/admin/UserProfilePage';
 import AdminAboutPage from './pages/admin/AboutPage';
 import AdminPlansPage from './pages/admin/PlansPage';
 import AdminTenantProfilePage from './pages/admin/TenantProfilePage';
+import AdminHealthPage from './pages/admin/HealthPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -122,6 +123,7 @@ export default function App() {
                     <Route path="tenants" element={<AdminTenantsPage />} />
                     <Route path="tenants/:tenantId" element={<AdminTenantProfilePage />} />
                     <Route path="plans" element={<AdminPlansPage />} />
+                    <Route path="health" element={<AdminHealthPage />} />
                     <Route path="logs" element={<AdminLogsPage />} />
                     <Route path="config" element={<AdminConfigPage />} />
                     <Route path="about" element={<AdminAboutPage />} />

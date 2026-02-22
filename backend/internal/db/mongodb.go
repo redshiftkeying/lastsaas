@@ -155,6 +155,20 @@ func (m *MongoDB) ensureIndexes() {
 				{Keys: bson.D{{Key: "sortOrder", Value: 1}}},
 			},
 		},
+		{
+			"system_nodes",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "machineId", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "lastSeen", Value: 1}}},
+			},
+		},
+		{
+			"system_metrics",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "timestamp", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
+				{Keys: bson.D{{Key: "nodeId", Value: 1}, {Key: "timestamp", Value: -1}}},
+			},
+		},
 	}
 
 	for _, idx := range indexes {
@@ -230,4 +244,12 @@ func (m *MongoDB) Plans() *mongo.Collection {
 
 func (m *MongoDB) CreditBundles() *mongo.Collection {
 	return m.Database.Collection("credit_bundles")
+}
+
+func (m *MongoDB) SystemNodes() *mongo.Collection {
+	return m.Database.Collection("system_nodes")
+}
+
+func (m *MongoDB) SystemMetrics() *mongo.Collection {
+	return m.Database.Collection("system_metrics")
 }

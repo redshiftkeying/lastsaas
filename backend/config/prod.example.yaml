@@ -8,6 +8,7 @@ database:
 
 frontend:
   url: ${FRONTEND_URL}
+  static_dir: ${FRONTEND_STATIC_DIR:/app/static}
 
 jwt:
   access_secret: ${JWT_ACCESS_SECRET}

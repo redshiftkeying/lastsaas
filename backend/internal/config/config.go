@@ -31,7 +31,8 @@ type DatabaseConfig struct {
 }
 
 type FrontendConfig struct {
-	URL string `yaml:"url"`
+	URL       string `yaml:"url"`
+	StaticDir string `yaml:"static_dir"`
 }
 
 type JWTConfig struct {
