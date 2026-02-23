@@ -26,6 +26,14 @@ func NewTenantMiddleware(database *db.MongoDB) *TenantMiddleware {
 
 func (m *TenantMiddleware) RequireTenant(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If API key auth already populated tenant context, pass through
+		if _, ok := GetTenantFromContext(r.Context()); ok {
+			if _, ok := GetMembershipFromContext(r.Context()); ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
 		tenantIDStr := r.Header.Get("X-Tenant-ID")
 		if tenantIDStr == "" {
 			http.Error(w, `{"error":"X-Tenant-ID header required"}`, http.StatusBadRequest)

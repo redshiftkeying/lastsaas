@@ -1,20 +1,31 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Settings, LogOut, Shield, ChevronDown, Bell, CreditCard, Zap } from 'lucide-react';
+import {
+  LayoutDashboard, Users, Settings, LogOut, Shield, ChevronDown, Bell, CreditCard, Zap,
+  FileText, Image, Globe, Star, Heart, BookOpen, MessageCircle, HelpCircle,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
+import { useBranding } from '../contexts/BrandingContext';
 import { messagesApi, plansApi, bundlesApi } from '../api/client';
 import { useState, useRef, useEffect } from 'react';
+import type { LucideIcon } from 'lucide-react';
+
+const iconMap: Record<string, LucideIcon> = {
+  LayoutDashboard, Users, Settings, CreditCard, FileText, Image, Globe, Shield, Zap, Star, Heart, BookOpen, MessageCircle, HelpCircle,
+};
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, logout, memberships } = useAuth();
   const { activeTenant, setActiveTenant } = useTenant();
+  const { branding } = useBranding();
   const [showTenantMenu, setShowTenantMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showCredits, setShowCredits] = useState(false);
   const [tenantCredits, setTenantCredits] = useState(0);
   const [hasBundles, setHasBundles] = useState(false);
+  const [showTeam, setShowTeam] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isActive = (path: string) => location.pathname === path;
@@ -29,6 +40,7 @@ export default function Layout() {
           const hasCredits = data.plans.some(p => p.usageCreditsPerMonth > 0 || p.bonusCredits > 0);
           setShowCredits(hasCredits);
           setTenantCredits(data.tenantSubscriptionCredits + data.tenantPurchasedCredits);
+          setShowTeam(data.maxPlanUserLimit !== 1);
         })
         .catch(() => {});
       bundlesApi.list()
@@ -52,12 +64,34 @@ export default function Layout() {
     navigate('/login');
   };
 
-  const navItems = [
+  // Build nav items from branding config or fallback to defaults
+  const defaultNavItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/team', icon: Users, label: 'Team' },
+    ...(showTeam ? [{ path: '/team', icon: Users, label: 'Team' }] : []),
     { path: '/plan', icon: CreditCard, label: 'Plan' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ];
+
+  const navItems = branding.navItems.length > 0
+    ? branding.navItems
+        .filter(item => item.visible)
+        .filter(item => {
+          // Hide team item if showTeam is false
+          if (item.id === 'team' && !showTeam) return false;
+          return true;
+        })
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map(item => ({
+          path: item.target,
+          icon: iconMap[item.icon] || FileText,
+          label: item.label,
+        }))
+    : defaultNavItems;
+
+  // Resolve logo display
+  const appName = branding.appName || 'LastSaaS';
+  const logoMode = branding.logoMode || 'text';
+  const logoUrl = branding.logoUrl;
 
   return (
     <div className="min-h-screen bg-dark-950">
@@ -68,10 +102,16 @@ export default function Layout() {
             {/* Logo + Nav */}
             <div className="flex items-center gap-6">
               <Link to="/dashboard" className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">LS</span>
-                </div>
-                <span className="font-semibold text-white hidden sm:block">LastSaaS</span>
+                {(logoMode === 'image' || logoMode === 'both') && logoUrl ? (
+                  <img src={logoUrl} alt={appName} className="h-8 w-8 rounded-lg object-contain" />
+                ) : (
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">{appName.slice(0, 2).toUpperCase()}</span>
+                  </div>
+                )}
+                {(logoMode === 'text' || logoMode === 'both') && (
+                  <span className="font-semibold text-white hidden sm:block">{appName}</span>
+                )}
               </Link>
 
               {isAuthenticated && (
@@ -187,7 +227,7 @@ export default function Layout() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Outlet context={{ setUnreadCount }} />
+        <Outlet context={{ setUnreadCount, showTeam }} />
       </main>
     </div>
   );

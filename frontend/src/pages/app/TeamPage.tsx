@@ -1,16 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Users, UserPlus, Trash2, Crown, ShieldCheck, User } from 'lucide-react';
-import { tenantApi } from '../../api/client';
+import { useNavigate } from 'react-router-dom';
+import { Users, UserPlus, Trash2, Crown, ShieldCheck, User, Zap } from 'lucide-react';
+import { tenantApi, plansApi } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../contexts/TenantContext';
-import type { TenantMember } from '../../types';
+import type { TenantMember, Plan } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
 const roleIcons = { owner: Crown, admin: ShieldCheck, user: User };
 
+function renderTemplate(template: string, vars: Record<string, string | number>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{\\{\\.${key}\\}\\}`, 'g'), String(value));
+  }
+  // Handle simple {{if ne .Var N}}...{{end}} blocks
+  result = result.replace(/\{\{if ne \.(\w+) (\d+)\}\}(.*?)\{\{end\}\}/g, (_match, varName, compare, content) => {
+    return String(vars[varName]) !== compare ? content : '';
+  });
+  return result;
+}
+
 export default function TeamPage() {
   const { user } = useAuth();
   const { role: myRole } = useTenant();
+  const navigate = useNavigate();
   const [members, setMembers] = useState<TenantMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -19,6 +33,12 @@ export default function TeamPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradePromptTitle, setUpgradePromptTitle] = useState('');
+  const [upgradePromptBody, setUpgradePromptBody] = useState('');
+  const [currentPlanUserLimit, setCurrentPlanUserLimit] = useState(0);
+  const [currentPlanId, setCurrentPlanId] = useState('');
+  const [plans, setPlans] = useState<Plan[]>([]);
 
   const canManage = myRole === 'owner' || myRole === 'admin';
   const isOwner = myRole === 'owner';
@@ -32,6 +52,18 @@ export default function TeamPage() {
 
   useEffect(() => { fetchMembers(); }, []);
 
+  useEffect(() => {
+    plansApi.list()
+      .then((data) => {
+        setCurrentPlanUserLimit(data.currentPlanUserLimit);
+        setCurrentPlanId(data.currentPlanId);
+        setPlans(data.plans);
+        setUpgradePromptTitle(data.upgradePromptTitle);
+        setUpgradePromptBody(data.upgradePromptBody);
+      })
+      .catch(() => {});
+  }, []);
+
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -43,8 +75,12 @@ export default function TeamPage() {
       setInviteEmail('');
       setShowInvite(false);
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(msg || 'Failed to send invitation');
+      const data = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
+      if (data?.code === 'USER_LIMIT_REACHED') {
+        setShowUpgradeModal(true);
+      } else {
+        setError(data?.error || 'Failed to send invitation');
+      }
     } finally {
       setInviting(false);
     }
@@ -202,6 +238,48 @@ export default function TeamPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Upgrade Modal */}
+      {showUpgradeModal && (() => {
+        const templateVars = { UserLimit: currentPlanUserLimit, PlanName: plans.find(p => p.id === currentPlanId)?.name || '' };
+        const sortedByPrice = [...plans].sort((a, b) => a.monthlyPriceCents - b.monthlyPriceCents);
+        const currentIdx = sortedByPrice.findIndex(p => p.id === currentPlanId);
+        const recommendedPlan = sortedByPrice.slice(currentIdx + 1).find(p =>
+          p.userLimit === 0 || p.userLimit > members.length
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-dark-900 border border-dark-700 rounded-2xl p-6 max-w-md mx-4 w-full">
+              <div className="flex items-center gap-3 mb-4">
+                <Zap className="w-6 h-6 text-primary-400" />
+                <h3 className="text-lg font-semibold text-white">
+                  {renderTemplate(upgradePromptTitle, templateVars)}
+                </h3>
+              </div>
+              <p className="text-dark-300 mb-6">
+                {renderTemplate(upgradePromptBody, templateVars)}
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowUpgradeModal(false)}
+                  className="px-4 py-2 text-sm text-dark-300 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUpgradeModal(false);
+                    navigate(recommendedPlan ? `/plan?upgrade=${recommendedPlan.id}` : '/plan');
+                  }}
+                  className="px-4 py-2 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+                >
+                  Upgrade Plan
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

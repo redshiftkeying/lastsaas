@@ -1,14 +1,20 @@
-import { LayoutDashboard, Users, Settings } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { LayoutDashboard, Users, Settings, Shield } from 'lucide-react';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../contexts/TenantContext';
+import { useBranding } from '../../contexts/BrandingContext';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { activeTenant, role } = useTenant();
+  const { activeTenant, role, isRootTenant } = useTenant();
+  const { branding } = useBranding();
+  const { showTeam } = useOutletContext<{ showTeam: boolean }>();
 
   return (
     <div>
+      {branding.dashboardHtml && (
+        <div className="mb-8" dangerouslySetInnerHTML={{ __html: branding.dashboardHtml }} />
+      )}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">
           Welcome back, {user?.displayName?.split(' ')[0]}
@@ -30,16 +36,18 @@ export default function DashboardPage() {
           <p className="text-sm text-dark-400">View your organization's activity and metrics.</p>
         </Link>
 
-        <Link
-          to="/team"
-          className="bg-dark-900/50 backdrop-blur-sm border border-dark-800 rounded-2xl p-6 hover:border-dark-700 transition-colors"
-        >
-          <div className="w-12 h-12 rounded-xl bg-accent-purple/20 flex items-center justify-center mb-4">
-            <Users className="w-6 h-6 text-accent-purple" />
-          </div>
-          <h3 className="text-lg font-semibold text-white mb-1">Team</h3>
-          <p className="text-sm text-dark-400">Manage your team members and invitations.</p>
-        </Link>
+        {showTeam && (
+          <Link
+            to="/team"
+            className="bg-dark-900/50 backdrop-blur-sm border border-dark-800 rounded-2xl p-6 hover:border-dark-700 transition-colors"
+          >
+            <div className="w-12 h-12 rounded-xl bg-accent-purple/20 flex items-center justify-center mb-4">
+              <Users className="w-6 h-6 text-accent-purple" />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-1">Team</h3>
+            <p className="text-sm text-dark-400">Manage your team members and invitations.</p>
+          </Link>
+        )}
 
         <Link
           to="/settings"
@@ -51,6 +59,19 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-white mb-1">Settings</h3>
           <p className="text-sm text-dark-400">Manage your account and preferences.</p>
         </Link>
+
+        {isRootTenant && (
+          <Link
+            to="/test-entitlements"
+            className="bg-dark-900/50 backdrop-blur-sm border border-dark-800 rounded-2xl p-6 hover:border-dark-700 transition-colors"
+          >
+            <div className="w-12 h-12 rounded-xl bg-accent-emerald/20 flex items-center justify-center mb-4">
+              <Shield className="w-6 h-6 text-accent-emerald" />
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-1">Test Entitlements</h3>
+            <p className="text-sm text-dark-400">Test plan entitlements and verify upgrade flows.</p>
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { UserPlus } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranding } from '../../contexts/BrandingContext';
 
 export default function SignupPage() {
   const navigate = useNavigate();
   const { register } = useAuth();
+  const { branding } = useBranding();
   const [searchParams] = useSearchParams();
   const invitationToken = searchParams.get('invitation') || undefined;
 
@@ -28,17 +30,24 @@ export default function SignupPage() {
     }
   };
 
+  const heading = branding.signupHeading || 'Create your account';
+  const defaultSubtext = invitationToken ? 'Accept your invitation and join the team' : 'Get started with your own organization';
+  const subtext = branding.signupSubtext || defaultSubtext;
+  const logoUrl = branding.logoUrl;
+
   return (
     <div className="min-h-screen bg-dark-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center mx-auto mb-4">
-            <UserPlus className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Create your account</h1>
-          <p className="text-dark-400 mt-2">
-            {invitationToken ? 'Accept your invitation and join the team' : 'Get started with your own organization'}
-          </p>
+          {logoUrl ? (
+            <img src={logoUrl} alt={branding.appName} className="h-14 mx-auto mb-4 object-contain" />
+          ) : (
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-accent-purple flex items-center justify-center mx-auto mb-4">
+              <UserPlus className="w-7 h-7 text-white" />
+            </div>
+          )}
+          <h1 className="text-2xl font-bold text-white">{heading}</h1>
+          <p className="text-dark-400 mt-2">{subtext}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-dark-900/50 backdrop-blur-sm border border-dark-800 rounded-2xl p-6 space-y-4">

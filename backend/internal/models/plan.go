@@ -39,6 +39,7 @@ type Plan struct {
 	UserLimit            int                         `json:"userLimit" bson:"userLimit"`
 	Entitlements         map[string]EntitlementValue `json:"entitlements" bson:"entitlements"`
 	IsSystem             bool                        `json:"isSystem" bson:"isSystem"`
+	IsArchived           bool                        `json:"isArchived" bson:"isArchived"`
 	CreatedAt            time.Time                   `json:"createdAt" bson:"createdAt"`
 	UpdatedAt            time.Time                   `json:"updatedAt" bson:"updatedAt"`
 }

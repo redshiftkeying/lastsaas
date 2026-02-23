@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Zap, ShoppingCart } from 'lucide-react';
-import { bundlesApi, plansApi } from '../../api/client';
+import { bundlesApi, plansApi, billingApi } from '../../api/client';
 import type { CreditBundle } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -12,6 +12,7 @@ export default function BuyCreditsPage() {
   const [bundles, setBundles] = useState<CreditBundle[]>([]);
   const [totalCredits, setTotalCredits] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -25,6 +26,20 @@ export default function BuyCreditsPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const handleBuy = async (bundleId: string) => {
+    setCheckoutLoading(bundleId);
+    try {
+      const result = await billingApi.checkout({ bundleId });
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl;
+      }
+    } catch {
+      // Error handled by interceptor
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
 
   if (loading) return <LoadingSpinner size="lg" className="py-20" />;
 
@@ -88,15 +103,19 @@ export default function BuyCreditsPage() {
               </div>
 
               <button
-                disabled
+                onClick={() => handleBuy(bundle.id)}
+                disabled={checkoutLoading !== null}
                 className="w-full py-2.5 text-sm font-medium bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
               >
-                <ShoppingCart className="w-4 h-4" />
-                Buy Now
+                {checkoutLoading === bundle.id ? (
+                  <LoadingSpinner size="sm" />
+                ) : (
+                  <>
+                    <ShoppingCart className="w-4 h-4" />
+                    Buy Now
+                  </>
+                )}
               </button>
-              <p className="text-xs text-dark-500 text-center mt-2">
-                Payment integration coming soon
-              </p>
             </div>
           ))}
         </div>

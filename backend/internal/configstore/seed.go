@@ -176,6 +176,62 @@ var SystemDefaults = []models.ConfigVar{
 		Options:     `[{"label":"No Logging","value":"none"},{"label":"Critical","value":"critical"},{"label":"High","value":"high"},{"label":"Medium","value":"medium"},{"label":"Low","value":"low"},{"label":"Debug","value":"debug"}]`,
 		IsSystem:    true,
 	},
+	{
+		Name:        "team.upgrade_prompt.title",
+		Description: "Title shown when a user tries to invite a member but has reached their plan's user limit. Supports {{.UserLimit}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       "Team limit reached",
+		IsSystem:    true,
+	},
+	{
+		Name:        "team.upgrade_prompt.body",
+		Description: "Body text for the upgrade prompt shown when the user limit is reached. Supports {{.UserLimit}}, {{.PlanName}}, {{.AppName}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       "Your current plan allows up to {{.UserLimit}} team members. Upgrade your plan to invite more people to your team.",
+		IsSystem:    true,
+	},
+	{
+		Name:        "entitlement.upgrade_prompt.title",
+		Description: "Title shown when testing an entitlement the current plan does not include. Supports {{.EntitlementName}}, {{.PlanName}}, {{.AppName}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       "Upgrade required",
+		IsSystem:    true,
+	},
+	{
+		Name:        "entitlement.upgrade_prompt.body",
+		Description: "Body text shown when a boolean entitlement is not included in the current plan. Supports {{.EntitlementName}}, {{.PlanName}}, {{.AppName}}, {{.RecommendedPlanName}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       "Your current {{.PlanName}} plan does not include {{.EntitlementName}}. Upgrade to {{.RecommendedPlanName}} to unlock this feature.",
+		IsSystem:    true,
+	},
+	{
+		Name:        "entitlement.upgrade_prompt.numeric_body",
+		Description: "Body text shown when a numeric entitlement limit is exceeded. Supports {{.EntitlementName}}, {{.PlanName}}, {{.AppName}}, {{.RecommendedPlanName}}, {{.CurrentValue}}, {{.RequestedValue}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       "Your current {{.PlanName}} plan allows a maximum of {{.CurrentValue}} {{.EntitlementName}}. Upgrade to {{.RecommendedPlanName}} for more.",
+		IsSystem:    true,
+	},
+	{
+		Name:        "analytics.head_snippet",
+		Description: "HTML snippet injected into <head> on all app pages (not admin). Use for analytics tracking codes such as Google Analytics.",
+		Type:        models.ConfigTypeString,
+		Value:       "<!-- analytics snippet: paste your tracking code here -->",
+		IsSystem:    true,
+	},
+	{
+		Name:        "billing.failed_charge.message_subject",
+		Description: "Subject for the in-app message sent when a subscription payment fails. Supports {{.AppName}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       `Action Required: Payment Failed for {{.AppName}}`,
+		IsSystem:    true,
+	},
+	{
+		Name:        "billing.failed_charge.message_body",
+		Description: "Body for the in-app message sent when a subscription payment fails. Supports {{.AppName}} and {{.BillingURL}}.",
+		Type:        models.ConfigTypeTemplate,
+		Value:       `Your most recent payment for {{.AppName}} was unsuccessful. Please update your billing information to avoid any interruption to your service. You can update your payment method by visiting your <a href="{{.BillingURL}}">billing settings</a>.`,
+		IsSystem:    true,
+	},
 }
 
 // Seed inserts any missing system-defined variables into the database.

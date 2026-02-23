@@ -43,6 +43,12 @@ export interface TenantDetail {
   billingWaived: boolean;
   subscriptionCredits: number;
   purchasedCredits: number;
+  stripeCustomerId?: string;
+  billingStatus: BillingStatus;
+  stripeSubscriptionId?: string;
+  billingInterval?: string;
+  currentPeriodEnd?: string;
+  canceledAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +64,9 @@ export interface TenantListItem {
   billingWaived: boolean;
   subscriptionCredits: number;
   purchasedCredits: number;
+  billingStatus: BillingStatus;
+  billingInterval?: string;
+  currentPeriodEnd?: string;
   createdAt: string;
 }
 
@@ -177,8 +186,10 @@ export interface Plan {
   userLimit: number;
   entitlements: Record<string, EntitlementValue>;
   isSystem: boolean;
+  isArchived: boolean;
   createdAt: string;
   updatedAt: string;
+  subscriberCount?: number;
 }
 
 export interface EntitlementKeyInfo {
@@ -193,6 +204,17 @@ export interface PublicPlansResponse {
   billingWaived: boolean;
   tenantSubscriptionCredits: number;
   tenantPurchasedCredits: number;
+  billingStatus: BillingStatus;
+  billingInterval?: string;
+  currentPeriodEnd?: string;
+  canceledAt?: string;
+  currentPlanUserLimit: number;
+  maxPlanUserLimit: number;
+  upgradePromptTitle: string;
+  upgradePromptBody: string;
+  entitlementUpgradePromptTitle: string;
+  entitlementUpgradePromptBody: string;
+  entitlementUpgradePromptNumericBody: string;
 }
 
 export interface CreditBundle {
@@ -268,6 +290,11 @@ export interface GoRuntimeMetrics {
   numGC: number;
 }
 
+export interface IntegrationCountMetrics {
+  stripeApiCalls: number;
+  resendEmails: number;
+}
+
 export interface SystemMetric {
   id: string;
   nodeId: string;
@@ -279,7 +306,163 @@ export interface SystemMetric {
   http: HTTPMetrics;
   mongo: MongoMetrics;
   goRuntime: GoRuntimeMetrics;
+  integrations: IntegrationCountMetrics;
 }
 
 export type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d';
 export type NodeFilterMode = 'aggregate' | 'all' | 'single';
+
+// --- Billing ---
+
+export type BillingStatus = 'none' | 'active' | 'past_due' | 'canceled';
+export type BillingInterval = 'month' | 'year';
+
+export interface FinancialTransaction {
+  id: string;
+  tenantId: string;
+  userId: string;
+  type: 'subscription' | 'credit_purchase' | 'refund';
+  amountCents: number;
+  currency: string;
+  description: string;
+  invoiceNumber: string;
+  planName?: string;
+  bundleName?: string;
+  billingInterval?: string;
+  createdAt: string;
+}
+
+export interface DailyMetricPoint {
+  date: string;
+  value: number;
+}
+
+// --- Integration Health ---
+
+export type IntegrationStatus = 'healthy' | 'unhealthy' | 'not_configured';
+
+export interface IntegrationCheck {
+  name: string;
+  status: IntegrationStatus;
+  message: string;
+  lastCheck: string;
+  responseMs: number;
+  calls24h: number;
+}
+
+// --- API Keys ---
+
+export type APIKeyAuthority = 'admin' | 'user';
+
+export interface APIKey {
+  id: string;
+  name: string;
+  keyPreview: string;
+  authority: APIKeyAuthority;
+  createdBy: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  isActive: boolean;
+}
+
+// --- Webhooks ---
+
+export type WebhookEventType = 'tenant.created';
+
+export interface Webhook {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  secretPreview: string;
+  events: WebhookEventType[];
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deliveries24h?: number;
+  lastDelivery?: string | null;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  webhookId: string;
+  eventType: WebhookEventType;
+  payload: string;
+  responseCode: number;
+  responseBody: string;
+  success: boolean;
+  durationMs: number;
+  createdAt: string;
+}
+
+export interface WebhookEventTypeInfo {
+  type: string;
+  category: string;
+  description: string;
+}
+
+// --- Branding ---
+
+export interface NavItem {
+  id: string;
+  label: string;
+  icon: string;
+  target: string;
+  entitlementGate?: string;
+  isBuiltIn: boolean;
+  visible: boolean;
+  sortOrder: number;
+}
+
+export interface BrandingConfig {
+  appName: string;
+  tagline: string;
+  logoMode: string;
+  logoUrl: string;
+  faviconUrl: string;
+  primaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  surfaceColor: string;
+  textColor: string;
+  fontFamily: string;
+  headingFont: string;
+  landingEnabled: boolean;
+  landingTitle: string;
+  landingMeta: string;
+  landingHtml: string;
+  dashboardHtml: string;
+  loginHeading: string;
+  loginSubtext: string;
+  signupHeading: string;
+  signupSubtext: string;
+  customCss: string;
+  headHtml: string;
+  ogImageUrl: string;
+  navItems: NavItem[];
+  analyticsSnippet: string;
+}
+
+export interface MediaItem {
+  id: string;
+  key: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  url: string;
+  createdAt: string;
+}
+
+export interface CustomPage {
+  id: string;
+  slug: string;
+  title: string;
+  htmlBody: string;
+  metaDescription: string;
+  ogImage: string;
+  isPublished: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}

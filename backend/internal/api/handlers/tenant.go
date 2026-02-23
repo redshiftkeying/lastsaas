@@ -181,8 +181,11 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 			"expiresAt": bson.M{"$gt": time.Now()},
 		})
 		if memberCount+pendingCount >= int64(tenantPlan.UserLimit) {
-			respondWithError(w, http.StatusForbidden,
-				fmt.Sprintf("User limit reached. Your plan allows %d users.", tenantPlan.UserLimit))
+			respondWithJSON(w, http.StatusForbidden, map[string]interface{}{
+				"error":     fmt.Sprintf("User limit reached. Your plan allows %d users.", tenantPlan.UserLimit),
+				"code":      "USER_LIMIT_REACHED",
+				"userLimit": tenantPlan.UserLimit,
+			})
 			return
 		}
 	}

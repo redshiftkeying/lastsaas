@@ -87,6 +87,10 @@ function aggregateByTimestamp(metrics: SystemMetric[]): SystemMetric[] {
         gcPauseNs: avg((m) => m.goRuntime.gcPauseNs),
         numGC: sum((m) => m.goRuntime.numGC),
       },
+      integrations: {
+        stripeApiCalls: sum((m) => m.integrations?.stripeApiCalls ?? 0),
+        resendEmails: sum((m) => m.integrations?.resendEmails ?? 0),
+      },
     });
   }
   return result.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -133,6 +137,8 @@ export default function MetricsCharts({ metrics, filterMode }: MetricsChartsProp
         row[`mongoCon_${nodeId}`] = m.mongo.currentConnections;
         row[`goroutines_${nodeId}`] = m.goRuntime.numGoroutine;
         row[`heapMB_${nodeId}`] = m.goRuntime.heapAlloc / (1024 * 1024);
+        row[`stripeCalls_${nodeId}`] = m.integrations?.stripeApiCalls ?? 0;
+        row[`resendEmails_${nodeId}`] = m.integrations?.resendEmails ?? 0;
       }
     }
     mergedData = Array.from(timeMap.entries())
@@ -153,6 +159,8 @@ export default function MetricsCharts({ metrics, filterMode }: MetricsChartsProp
     mongoCon: m.mongo.currentConnections,
     goroutines: m.goRuntime.numGoroutine,
     heapMB: m.goRuntime.heapAlloc / (1024 * 1024),
+    stripeCalls: m.integrations?.stripeApiCalls ?? 0,
+    resendEmails: m.integrations?.resendEmails ?? 0,
   }));
 
   const data = isMultiNode ? mergedData : singleData;
@@ -295,6 +303,32 @@ export default function MetricsCharts({ metrics, filterMode }: MetricsChartsProp
               </>
             )}
           </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Stripe API Calls */}
+      <ChartCard title="Stripe API Calls (per interval)">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+            <XAxis dataKey="time" tick={{ fill: axisFill, fontSize: 11 }} />
+            <YAxis tick={{ fill: axisFill, fontSize: 11 }} allowDecimals={false} />
+            <Tooltip {...tt} />
+            {renderAreas('stripeCalls', '#8b5cf6')}
+          </AreaChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Resend Emails */}
+      <ChartCard title="Emails Sent (per interval)">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+            <XAxis dataKey="time" tick={{ fill: axisFill, fontSize: 11 }} />
+            <YAxis tick={{ fill: axisFill, fontSize: 11 }} allowDecimals={false} />
+            <Tooltip {...tt} />
+            {renderAreas('resendEmails', '#f59e0b')}
+          </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
     </div>

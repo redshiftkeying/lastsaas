@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"lastsaas/internal/db"
 	"lastsaas/internal/events"
+	"lastsaas/internal/health"
 	"lastsaas/internal/middleware"
 	"lastsaas/internal/models"
 	"lastsaas/internal/syslog"
@@ -22,9 +24,11 @@ import (
 )
 
 type AdminHandler struct {
-	db     *db.MongoDB
-	events events.Emitter
-	syslog *syslog.Logger
+	db        *db.MongoDB
+	events    events.Emitter
+	syslog    *syslog.Logger
+	health    *health.Service
+	getConfig func(string) string
 }
 
 func NewAdminHandler(database *db.MongoDB, emitter events.Emitter, sysLogger *syslog.Logger) *AdminHandler {
@@ -33,6 +37,21 @@ func NewAdminHandler(database *db.MongoDB, emitter events.Emitter, sysLogger *sy
 		events: emitter,
 		syslog: sysLogger,
 	}
+}
+
+func (h *AdminHandler) SetHealthService(svc *health.Service, getConfig func(string) string) {
+	h.health = svc
+	h.getConfig = getConfig
+}
+
+var regexMetaChars = strings.NewReplacer(
+	`\`, `\\`, `.`, `\.`, `+`, `\+`, `*`, `\*`, `?`, `\?`,
+	`(`, `\(`, `)`, `\)`, `[`, `\[`, `]`, `\]`, `{`, `\{`, `}`, `\}`,
+	`^`, `\^`, `$`, `\$`, `|`, `\|`,
+)
+
+func escapeRegex(s string) string {
+	return regexMetaChars.Replace(s)
 }
 
 type TenantListItem struct {
@@ -46,6 +65,7 @@ type TenantListItem struct {
 	BillingWaived       bool      `json:"billingWaived"`
 	SubscriptionCredits int64     `json:"subscriptionCredits"`
 	PurchasedCredits    int64     `json:"purchasedCredits"`
+	BillingStatus       string    `json:"billingStatus"`
 	CreatedAt           time.Time `json:"createdAt"`
 }
 
@@ -61,27 +81,105 @@ type UserListItem struct {
 }
 
 func (h *AdminHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
-	opts := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}})
-	cursor, err := h.db.Tenants().Find(r.Context(), bson.M{}, opts)
+	ctx := r.Context()
+	q := r.URL.Query()
+
+	// Pagination
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+	skip := int64((page - 1) * limit)
+
+	// Search filter
+	filter := bson.M{}
+	if search := strings.TrimSpace(q.Get("search")); search != "" {
+		escaped := primitive.Regex{Pattern: "(?i)" + escapeRegex(search)}
+		filter["$or"] = []bson.M{
+			{"name": bson.M{"$regex": escaped.Pattern}},
+			{"slug": bson.M{"$regex": escaped.Pattern}},
+		}
+	}
+
+	// Sort
+	sortField := "createdAt"
+	sortDir := -1
+	switch q.Get("sort") {
+	case "name":
+		sortField = "name"
+		sortDir = 1
+	case "-name":
+		sortField = "name"
+		sortDir = -1
+	case "createdAt":
+		sortField = "createdAt"
+		sortDir = 1
+	case "-createdAt":
+		sortField = "createdAt"
+		sortDir = -1
+	}
+
+	// Total count for pagination
+	total, err := h.db.Tenants().CountDocuments(ctx, filter)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to count tenants")
+		return
+	}
+
+	// Fetch page
+	opts := options.Find().
+		SetSort(bson.D{{Key: sortField, Value: sortDir}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+	cursor, err := h.db.Tenants().Find(ctx, filter, opts)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch tenants")
 		return
 	}
-	defer cursor.Close(r.Context())
+	defer cursor.Close(ctx)
 
 	var tenants []models.Tenant
-	if err := cursor.All(r.Context(), &tenants); err != nil {
+	if err := cursor.All(ctx, &tenants); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to decode tenants")
 		return
 	}
 
+	// Batch member counts via aggregation
+	tenantIDs := make([]primitive.ObjectID, len(tenants))
+	for i, t := range tenants {
+		tenantIDs[i] = t.ID
+	}
+	memberCounts := map[string]int{}
+	if len(tenantIDs) > 0 {
+		pipeline := bson.A{
+			bson.M{"$match": bson.M{"tenantId": bson.M{"$in": tenantIDs}}},
+			bson.M{"$group": bson.M{"_id": "$tenantId", "count": bson.M{"$sum": 1}}},
+		}
+		aggCursor, err := h.db.TenantMemberships().Aggregate(ctx, pipeline)
+		if err == nil {
+			defer aggCursor.Close(ctx)
+			var results []struct {
+				ID    primitive.ObjectID `bson:"_id"`
+				Count int               `bson:"count"`
+			}
+			aggCursor.All(ctx, &results)
+			for _, r := range results {
+				memberCounts[r.ID.Hex()] = r.Count
+			}
+		}
+	}
+
 	// Build plan name lookup
-	planCursor, _ := h.db.Plans().Find(r.Context(), bson.M{})
+	planCursor, _ := h.db.Plans().Find(ctx, bson.M{})
 	planNames := map[string]string{}
 	var systemPlanName string
 	if planCursor != nil {
 		var plans []models.Plan
-		planCursor.All(r.Context(), &plans)
+		planCursor.All(ctx, &plans)
 		for _, p := range plans {
 			planNames[p.ID.Hex()] = p.Name
 			if p.IsSystem {
@@ -93,9 +191,8 @@ func (h *AdminHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 		systemPlanName = "Free"
 	}
 
-	var items []TenantListItem
+	items := make([]TenantListItem, 0, len(tenants))
 	for _, t := range tenants {
-		memberCount, _ := h.db.TenantMemberships().CountDocuments(r.Context(), bson.M{"tenantId": t.ID})
 		pName := systemPlanName
 		if t.PlanID != nil {
 			if n, ok := planNames[t.PlanID.Hex()]; ok {
@@ -108,16 +205,22 @@ func (h *AdminHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 			Slug:                t.Slug,
 			IsRoot:              t.IsRoot,
 			IsActive:            t.IsActive,
-			MemberCount:         int(memberCount),
+			MemberCount:         memberCounts[t.ID.Hex()],
 			PlanName:            pName,
 			BillingWaived:       t.BillingWaived,
 			SubscriptionCredits: t.SubscriptionCredits,
 			PurchasedCredits:    t.PurchasedCredits,
+			BillingStatus:       string(t.BillingStatus),
 			CreatedAt:           t.CreatedAt,
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"tenants": items})
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"tenants": items,
+		"total":   total,
+		"page":    page,
+		"limit":   limit,
+	})
 }
 
 func (h *AdminHandler) GetTenant(w http.ResponseWriter, r *http.Request) {
@@ -199,40 +302,139 @@ func (h *AdminHandler) UpdateTenantStatus(w http.ResponseWriter, r *http.Request
 		bson.M{"$set": bson.M{"isActive": req.IsActive, "updatedAt": time.Now()}},
 	)
 
+	if !req.IsActive {
+		h.events.Emit(events.Event{
+			Type:      events.EventTenantDeactivated,
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"tenantId":   tenantID.Hex(),
+				"tenantName": tenant.Name,
+			},
+		})
+	}
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Tenant status updated"})
 }
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	opts := options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}})
-	cursor, err := h.db.Users().Find(r.Context(), bson.M{}, opts)
+	ctx := r.Context()
+	q := r.URL.Query()
+
+	// Pagination
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+	skip := int64((page - 1) * limit)
+
+	// Search filter
+	filter := bson.M{}
+	if search := strings.TrimSpace(q.Get("search")); search != "" {
+		escaped := escapeRegex(search)
+		filter["$or"] = []bson.M{
+			{"email": bson.M{"$regex": "(?i)" + escaped}},
+			{"displayName": bson.M{"$regex": "(?i)" + escaped}},
+		}
+	}
+
+	// Sort
+	sortField := "createdAt"
+	sortDir := -1
+	switch q.Get("sort") {
+	case "email":
+		sortField = "email"
+		sortDir = 1
+	case "-email":
+		sortField = "email"
+		sortDir = -1
+	case "displayName":
+		sortField = "displayName"
+		sortDir = 1
+	case "-displayName":
+		sortField = "displayName"
+		sortDir = -1
+	case "createdAt":
+		sortField = "createdAt"
+		sortDir = 1
+	case "-createdAt":
+		sortField = "createdAt"
+		sortDir = -1
+	}
+
+	// Total count for pagination
+	total, err := h.db.Users().CountDocuments(ctx, filter)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to count users")
+		return
+	}
+
+	// Fetch page
+	opts := options.Find().
+		SetSort(bson.D{{Key: sortField, Value: sortDir}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+	cursor, err := h.db.Users().Find(ctx, filter, opts)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to fetch users")
 		return
 	}
-	defer cursor.Close(r.Context())
+	defer cursor.Close(ctx)
 
 	var users []models.User
-	if err := cursor.All(r.Context(), &users); err != nil {
+	if err := cursor.All(ctx, &users); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to decode users")
 		return
 	}
 
-	var items []UserListItem
+	// Batch tenant counts via aggregation
+	userIDs := make([]primitive.ObjectID, len(users))
+	for i, u := range users {
+		userIDs[i] = u.ID
+	}
+	tenantCounts := map[string]int{}
+	if len(userIDs) > 0 {
+		pipeline := bson.A{
+			bson.M{"$match": bson.M{"userId": bson.M{"$in": userIDs}}},
+			bson.M{"$group": bson.M{"_id": "$userId", "count": bson.M{"$sum": 1}}},
+		}
+		aggCursor, err := h.db.TenantMemberships().Aggregate(ctx, pipeline)
+		if err == nil {
+			defer aggCursor.Close(ctx)
+			var results []struct {
+				ID    primitive.ObjectID `bson:"_id"`
+				Count int               `bson:"count"`
+			}
+			aggCursor.All(ctx, &results)
+			for _, r := range results {
+				tenantCounts[r.ID.Hex()] = r.Count
+			}
+		}
+	}
+
+	items := make([]UserListItem, 0, len(users))
 	for _, u := range users {
-		tenantCount, _ := h.db.TenantMemberships().CountDocuments(r.Context(), bson.M{"userId": u.ID})
 		items = append(items, UserListItem{
 			ID:            u.ID.Hex(),
 			Email:         u.Email,
 			DisplayName:   u.DisplayName,
 			EmailVerified: u.EmailVerified,
 			IsActive:      u.IsActive,
-			TenantCount:   int(tenantCount),
+			TenantCount:   tenantCounts[u.ID.Hex()],
 			CreatedAt:     u.CreatedAt,
 			LastLoginAt:   u.LastLoginAt,
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"users": items})
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"users": items,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 func (h *AdminHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
@@ -267,6 +469,16 @@ func (h *AdminHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	h.syslog.HighWithUser(r.Context(), fmt.Sprintf("User %s: %s (admin action)", action, userID.Hex()), actingUser.ID)
 
+	if !req.IsActive {
+		h.events.Emit(events.Event{
+			Type:      events.EventUserDeactivated,
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"userId": userID.Hex(),
+			},
+		})
+	}
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "User status updated"})
 }
 
@@ -274,6 +486,69 @@ func (h *AdminHandler) GetAbout(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"version":   version.Current,
 		"copyright": "\u00a92026 Metavert LLC, licensed under the MIT License",
+	})
+}
+
+func (h *AdminHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userCount, _ := h.db.Users().CountDocuments(ctx, bson.M{})
+	tenantCount, _ := h.db.Tenants().CountDocuments(ctx, bson.M{})
+
+	// Health status
+	healthy := true
+	var issues []string
+
+	if h.health != nil && h.getConfig != nil {
+		metrics, err := h.health.GetCurrentMetrics(ctx)
+		if err == nil && len(metrics) > 0 {
+			cpuWarn, _ := strconv.ParseFloat(h.getConfig("health.cpu.warning_threshold"), 64)
+			cpuCrit, _ := strconv.ParseFloat(h.getConfig("health.cpu.critical_threshold"), 64)
+			memWarn, _ := strconv.ParseFloat(h.getConfig("health.memory.warning_threshold"), 64)
+			memCrit, _ := strconv.ParseFloat(h.getConfig("health.memory.critical_threshold"), 64)
+			diskWarn, _ := strconv.ParseFloat(h.getConfig("health.disk.warning_threshold"), 64)
+			diskCrit, _ := strconv.ParseFloat(h.getConfig("health.disk.critical_threshold"), 64)
+
+			for _, m := range metrics {
+				node := m.NodeID
+				if m.CPU.UsagePercent >= cpuCrit {
+					healthy = false
+					issues = append(issues, fmt.Sprintf("CPU critical on %s: %.1f%%", node, m.CPU.UsagePercent))
+				} else if m.CPU.UsagePercent >= cpuWarn {
+					issues = append(issues, fmt.Sprintf("CPU warning on %s: %.1f%%", node, m.CPU.UsagePercent))
+				}
+				if m.Memory.UsedPercent >= memCrit {
+					healthy = false
+					issues = append(issues, fmt.Sprintf("Memory critical on %s: %.1f%%", node, m.Memory.UsedPercent))
+				} else if m.Memory.UsedPercent >= memWarn {
+					issues = append(issues, fmt.Sprintf("Memory warning on %s: %.1f%%", node, m.Memory.UsedPercent))
+				}
+				if m.Disk.UsedPercent >= diskCrit {
+					healthy = false
+					issues = append(issues, fmt.Sprintf("Disk critical on %s: %.1f%%", node, m.Disk.UsedPercent))
+				} else if m.Disk.UsedPercent >= diskWarn {
+					issues = append(issues, fmt.Sprintf("Disk warning on %s: %.1f%%", node, m.Disk.UsedPercent))
+				}
+			}
+		}
+	}
+
+	// Check integration health
+	if h.health != nil {
+		intHealthy, intIssues := h.health.IntegrationsHealthy()
+		if !intHealthy {
+			healthy = false
+			issues = append(issues, intIssues...)
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"users":   userCount,
+		"tenants": tenantCount,
+		"health": map[string]interface{}{
+			"healthy": healthy,
+			"issues":  issues,
+		},
 	})
 }
 
@@ -692,6 +967,15 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			h.syslog.HighWithUser(ctx,
 				fmt.Sprintf("Tenant '%s' deleted (sole member %s was deleted)", tenant.Name, user.Email),
 				actingUser.ID)
+			h.events.Emit(events.Event{
+				Type:      events.EventTenantDeleted,
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"tenantId":   m.TenantID.Hex(),
+					"tenantName": tenant.Name,
+					"reason":     "owner_deleted",
+				},
+			})
 		}
 	}
 
@@ -704,6 +988,15 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	h.syslog.HighWithUser(ctx,
 		fmt.Sprintf("User deleted: %s (%s) (admin action)", user.Email, userID.Hex()),
 		actingUser.ID)
+
+	h.events.Emit(events.Event{
+		Type:      events.EventUserDeleted,
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"userId": userID.Hex(),
+			"email":  user.Email,
+		},
+	})
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "User deleted"})
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,11 +20,14 @@ import (
 	"lastsaas/internal/email"
 	"lastsaas/internal/events"
 	"lastsaas/internal/health"
-	"lastsaas/internal/planstore"
+	"lastsaas/internal/metrics"
 	"lastsaas/internal/middleware"
 	"lastsaas/internal/models"
+	"lastsaas/internal/planstore"
+	stripeservice "lastsaas/internal/stripe"
 	"lastsaas/internal/syslog"
 	"lastsaas/internal/version"
+	"lastsaas/internal/webhooks"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -38,10 +42,18 @@ type spaHandler struct {
 }
 
 func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Never serve the SPA for /api/ paths — those should be handled by API routes
+	if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
+		http.NotFound(w, r)
+		return
+	}
+
 	path := filepath.Join(h.staticPath, filepath.Clean(r.URL.Path))
 
 	fi, err := os.Stat(path)
 	if os.IsNotExist(err) || (err == nil && fi.IsDir()) {
+		// Serve index.html with no-store so browsers always fetch the latest version
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
 		return
 	}
@@ -135,7 +147,23 @@ func main() {
 		log.Println("Email service not configured (missing Resend API key)")
 	}
 
-	emitter := events.NewNoopEmitter()
+	// Initialize Stripe service (optional — billing works without it)
+	var stripeSvc *stripeservice.Service
+	if cfg.Stripe.SecretKey != "" {
+		stripeSvc = stripeservice.New(
+			cfg.Stripe.SecretKey,
+			cfg.Stripe.PublishableKey,
+			cfg.Stripe.WebhookSecret,
+			database,
+			cfg.Frontend.URL,
+		)
+		log.Println("Stripe billing configured")
+	} else {
+		log.Println("Stripe billing not configured (missing secret key)")
+	}
+
+	webhookDispatcher := webhooks.NewDispatcher(database)
+	var emitter events.Emitter = webhookDispatcher
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService, database)
@@ -146,6 +174,25 @@ func main() {
 
 	// Initialize health monitoring
 	healthService := health.New(database, metricsCollector, cfgStore.Get)
+
+	// Register integration health checks
+	healthService.RegisterIntegration("mongodb", health.NewMongoChecker(database.Client))
+	if cfg.Stripe.SecretKey != "" {
+		healthService.RegisterIntegration("stripe", health.NewStripeChecker())
+	} else {
+		healthService.RegisterIntegration("stripe", nil)
+	}
+	if cfg.Email.ResendAPIKey != "" {
+		healthService.RegisterIntegration("resend", health.NewResendChecker(cfg.Email.ResendAPIKey))
+	} else {
+		healthService.RegisterIntegration("resend", nil)
+	}
+	if cfg.OAuth.GoogleClientID != "" && cfg.OAuth.GoogleClientSecret != "" {
+		healthService.RegisterIntegration("google_oauth", health.NewGoogleOAuthChecker())
+	} else {
+		healthService.RegisterIntegration("google_oauth", nil)
+	}
+
 	healthService.Start()
 	defer healthService.Stop()
 
@@ -154,12 +201,23 @@ func main() {
 	authHandler := handlers.NewAuthHandler(database, jwtService, passwordService, googleOAuth, emailService, emitter, cfg.Frontend.URL, sysLogger)
 	tenantHandler := handlers.NewTenantHandler(database, emailService, emitter, sysLogger)
 	adminHandler := handlers.NewAdminHandler(database, emitter, sysLogger)
+	adminHandler.SetHealthService(healthService, cfgStore.Get)
 	messageHandler := handlers.NewMessageHandler(database)
 	logHandler := handlers.NewLogHandler(database)
 	configHandler := handlers.NewConfigHandler(database, cfgStore, sysLogger)
-	plansHandler := handlers.NewPlansHandler(database, sysLogger)
+	plansHandler := handlers.NewPlansHandler(database, sysLogger, cfgStore, stripeSvc)
 	bundlesHandler := handlers.NewBundlesHandler(database, sysLogger)
 	healthHandler := handlers.NewHealthHandler(healthService)
+	billingHandler := handlers.NewBillingHandler(stripeSvc, database, emitter, sysLogger)
+	webhookHandler := handlers.NewWebhookHandler(stripeSvc, database, emitter, sysLogger, cfgStore.Get)
+	apiKeysHandler := handlers.NewAPIKeysHandler(database, emitter, sysLogger)
+	webhooksHandler := handlers.NewWebhooksHandler(database, sysLogger, webhookDispatcher)
+	brandingHandler := handlers.NewBrandingHandler(database, cfgStore, sysLogger)
+
+	// Initialize daily metrics service
+	metricsService := metrics.New(database)
+	metricsService.Start()
+	defer metricsService.Stop()
 
 	// Setup router
 	router := mux.NewRouter()
@@ -175,6 +233,17 @@ func main() {
 
 	// --- Bootstrap status (always accessible, init is CLI-only) ---
 	api.HandleFunc("/bootstrap/status", bootstrapHandler.Status).Methods("GET")
+
+	// API documentation (public, no auth)
+	api.HandleFunc("/docs", handlers.DocsHTML).Methods("GET")
+	api.HandleFunc("/docs/markdown", handlers.DocsMarkdown).Methods("GET")
+
+	// --- Public branding routes (no auth, no bootstrap guard) ---
+	api.HandleFunc("/branding", brandingHandler.GetBranding).Methods("GET")
+	api.HandleFunc("/branding/asset/{key}", brandingHandler.ServeAsset).Methods("GET")
+	api.HandleFunc("/branding/media/{id}", brandingHandler.ServeMedia).Methods("GET")
+	api.HandleFunc("/branding/page/{slug}", brandingHandler.GetPublicPage).Methods("GET")
+	api.HandleFunc("/branding/pages", brandingHandler.ListPublicPages).Methods("GET")
 
 	// --- Guarded routes (require system to be initialized) ---
 	guarded := api.PathPrefix("").Subrouter()
@@ -277,6 +346,21 @@ func main() {
 	// Public credit bundles route (require JWT, not admin)
 	guarded.Handle("/credit-bundles", authMiddleware.RequireAuth(http.HandlerFunc(bundlesHandler.ListBundlesPublic))).Methods("GET")
 
+	// Webhook route (no auth — uses Stripe signature verification)
+	api.HandleFunc("/billing/webhook", webhookHandler.HandleWebhook).Methods("POST")
+
+	// Billing routes (require JWT + tenant)
+	billingAPI := guarded.PathPrefix("/billing").Subrouter()
+	billingAPI.Use(authMiddleware.RequireAuth)
+	billingAPI.Use(tenantMiddleware.RequireTenant)
+	billingAPI.HandleFunc("/checkout", billingHandler.Checkout).Methods("POST")
+	billingAPI.HandleFunc("/portal", billingHandler.Portal).Methods("POST")
+	billingAPI.HandleFunc("/transactions", billingHandler.ListTransactions).Methods("GET")
+	billingAPI.HandleFunc("/transactions/{id}/invoice", billingHandler.GetInvoice).Methods("GET")
+	billingAPI.HandleFunc("/transactions/{id}/invoice/pdf", billingHandler.GetInvoicePDF).Methods("GET")
+	billingAPI.HandleFunc("/cancel", billingHandler.CancelSubscription).Methods("POST")
+	billingAPI.HandleFunc("/config", billingHandler.GetConfig).Methods("GET")
+
 	// Admin routes (require JWT + root tenant + admin+ role)
 	adminAPI := guarded.PathPrefix("/admin").Subrouter()
 	adminAPI.Use(authMiddleware.RequireAuth)
@@ -285,6 +369,7 @@ func main() {
 	adminAPI.Use(middleware.RequireRole(models.RoleAdmin))
 
 	adminAPI.HandleFunc("/about", adminHandler.GetAbout).Methods("GET")
+	adminAPI.HandleFunc("/dashboard", adminHandler.GetDashboard).Methods("GET")
 	adminAPI.HandleFunc("/logs", logHandler.ListLogs).Methods("GET")
 	adminAPI.HandleFunc("/config", configHandler.ListConfig).Methods("GET")
 	adminAPI.HandleFunc("/config", configHandler.CreateConfig).Methods("POST")
@@ -300,6 +385,20 @@ func main() {
 	adminAPI.HandleFunc("/health/nodes", healthHandler.ListNodes).Methods("GET")
 	adminAPI.HandleFunc("/health/metrics", healthHandler.GetMetrics).Methods("GET")
 	adminAPI.HandleFunc("/health/current", healthHandler.GetCurrent).Methods("GET")
+	adminAPI.HandleFunc("/health/integrations", healthHandler.GetIntegrations).Methods("GET")
+	adminAPI.HandleFunc("/financial/transactions", billingHandler.AdminListTransactions).Methods("GET")
+	adminAPI.HandleFunc("/financial/metrics", billingHandler.AdminGetMetrics).Methods("GET")
+	adminAPI.HandleFunc("/api-keys", apiKeysHandler.ListAPIKeys).Methods("GET")
+	adminAPI.HandleFunc("/api-keys", apiKeysHandler.CreateAPIKey).Methods("POST")
+	adminAPI.HandleFunc("/api-keys/{keyId}", apiKeysHandler.DeleteAPIKey).Methods("DELETE")
+	adminAPI.HandleFunc("/webhooks", webhooksHandler.ListWebhooks).Methods("GET")
+	adminAPI.HandleFunc("/webhooks/event-types", webhooksHandler.ListEventTypes).Methods("GET")
+	adminAPI.HandleFunc("/webhooks", webhooksHandler.CreateWebhook).Methods("POST")
+	adminAPI.HandleFunc("/webhooks/{webhookId}", webhooksHandler.GetWebhook).Methods("GET")
+	adminAPI.HandleFunc("/webhooks/{webhookId}", webhooksHandler.UpdateWebhook).Methods("PUT")
+	adminAPI.HandleFunc("/webhooks/{webhookId}", webhooksHandler.DeleteWebhook).Methods("DELETE")
+	adminAPI.HandleFunc("/webhooks/{webhookId}/test", webhooksHandler.TestWebhook).Methods("POST")
+	adminAPI.HandleFunc("/webhooks/{webhookId}/regenerate-secret", webhooksHandler.RegenerateSecret).Methods("POST")
 
 	// Owner-only admin actions
 	adminOwner := adminAPI.PathPrefix("").Subrouter()
@@ -316,10 +415,24 @@ func main() {
 	adminOwner.HandleFunc("/plans", plansHandler.CreatePlan).Methods("POST")
 	adminOwner.HandleFunc("/plans/{planId}", plansHandler.UpdatePlan).Methods("PUT")
 	adminOwner.HandleFunc("/plans/{planId}", plansHandler.DeletePlan).Methods("DELETE")
+	adminOwner.HandleFunc("/plans/{planId}/archive", plansHandler.ArchivePlan).Methods("POST")
+	adminOwner.HandleFunc("/plans/{planId}/unarchive", plansHandler.UnarchivePlan).Methods("POST")
 	adminOwner.HandleFunc("/tenants/{tenantId}/plan", plansHandler.AssignPlan).Methods("PATCH")
 	adminOwner.HandleFunc("/credit-bundles", bundlesHandler.CreateBundle).Methods("POST")
 	adminOwner.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.UpdateBundle).Methods("PUT")
 	adminOwner.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.DeleteBundle).Methods("DELETE")
+	adminOwner.HandleFunc("/tenants/{tenantId}/cancel-subscription", billingHandler.AdminCancelSubscription).Methods("POST")
+	adminOwner.HandleFunc("/tenants/{tenantId}/subscription", billingHandler.AdminUpdateSubscription).Methods("PATCH")
+	adminOwner.HandleFunc("/branding", brandingHandler.UpdateBranding).Methods("PUT")
+	adminOwner.HandleFunc("/branding/asset", brandingHandler.UploadAsset).Methods("POST")
+	adminOwner.HandleFunc("/branding/asset/{key}", brandingHandler.DeleteAsset).Methods("DELETE")
+	adminOwner.HandleFunc("/branding/media", brandingHandler.ListMedia).Methods("GET")
+	adminOwner.HandleFunc("/branding/media", brandingHandler.UploadMedia).Methods("POST")
+	adminOwner.HandleFunc("/branding/media/{id}", brandingHandler.DeleteMedia).Methods("DELETE")
+	adminOwner.HandleFunc("/branding/pages", brandingHandler.AdminListPages).Methods("GET")
+	adminOwner.HandleFunc("/branding/pages", brandingHandler.CreatePage).Methods("POST")
+	adminOwner.HandleFunc("/branding/pages/{id}", brandingHandler.UpdatePage).Methods("PUT")
+	adminOwner.HandleFunc("/branding/pages/{id}", brandingHandler.DeletePage).Methods("DELETE")
 
 	// Serve frontend static files in production
 	if cfg.Frontend.StaticDir != "" {

@@ -6,8 +6,10 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"time"
 
+	"lastsaas/internal/apicounter"
 	"lastsaas/internal/db"
 	"lastsaas/internal/middleware"
 	"lastsaas/internal/models"
@@ -29,6 +31,11 @@ type Service struct {
 	getConfig func(string) string
 	nodeID    string
 	stopCh    chan struct{}
+
+	// Integration health checks
+	integrations []integrationEntry
+	intMu        sync.RWMutex
+	intResults   []models.IntegrationCheck
 }
 
 // New creates a health monitoring Service.
@@ -47,10 +54,11 @@ func New(database *db.MongoDB, metricsCollector *middleware.MetricsCollector, ge
 	}
 }
 
-// Start launches the heartbeat and collector background goroutines.
+// Start launches the heartbeat, collector, and integration check background goroutines.
 func (s *Service) Start() {
 	go s.heartbeatLoop()
 	go s.collectorLoop()
+	go s.integrationCheckLoop()
 	log.Printf("Health monitoring started (node: %s)", s.nodeID)
 }
 
@@ -236,6 +244,12 @@ func (s *Service) collectAndStore() {
 		HeapSys:      memStats.HeapSys,
 		GCPauseNs:    gcPause,
 		NumGC:        memStats.NumGC,
+	}
+
+	// Integration API call counters (snapshot and reset)
+	metric.Integrations = models.IntegrationCountMetrics{
+		StripeAPICalls: apicounter.StripeAPICalls.Swap(0),
+		ResendEmails:   apicounter.ResendEmails.Swap(0),
 	}
 
 	if _, err := s.db.SystemMetrics().InsertOne(ctx, metric); err != nil {

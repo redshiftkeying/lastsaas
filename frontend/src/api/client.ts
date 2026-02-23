@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric } from '../types';
+import type { AuthResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -107,16 +107,18 @@ export const messagesApi = {
 export const adminApi = {
   getAbout: () =>
     api.get<AboutInfo>('/admin/about').then(r => r.data),
-  listTenants: () =>
-    api.get<{ tenants: TenantListItem[] }>('/admin/tenants').then(r => r.data),
+  getDashboard: () =>
+    api.get<{ users: number; tenants: number; health: { healthy: boolean; issues: string[] } }>('/admin/dashboard').then(r => r.data),
+  listTenants: (params?: { page?: number; limit?: number; search?: string; sort?: string }) =>
+    api.get<{ tenants: TenantListItem[]; total: number; page: number; limit: number }>('/admin/tenants', { params }).then(r => r.data),
   getTenant: (id: string) =>
     api.get<{ tenant: TenantDetail; members: TenantMember[] }>(`/admin/tenants/${id}`).then(r => r.data),
   updateTenant: (id: string, data: { name?: string; billingWaived?: boolean; subscriptionCredits?: number; purchasedCredits?: number }) =>
     api.put(`/admin/tenants/${id}`, data).then(r => r.data),
   updateTenantStatus: (id: string, isActive: boolean) =>
     api.patch(`/admin/tenants/${id}/status`, { isActive }).then(r => r.data),
-  listUsers: () =>
-    api.get<{ users: UserListItem[] }>('/admin/users').then(r => r.data),
+  listUsers: (params?: { page?: number; limit?: number; search?: string; sort?: string }) =>
+    api.get<{ users: UserListItem[]; total: number; page: number; limit: number }>('/admin/users', { params }).then(r => r.data),
   updateUserStatus: (id: string, isActive: boolean) =>
     api.patch(`/admin/users/${id}/status`, { isActive }).then(r => r.data),
   listLogs: (params?: { page?: number; perPage?: number; severity?: string; search?: string; userId?: string }) =>
@@ -145,16 +147,24 @@ export const adminApi = {
     api.get<{ plans: Plan[] }>('/admin/plans').then(r => r.data),
   getPlan: (id: string) =>
     api.get<Plan>(`/admin/plans/${id}`).then(r => r.data),
-  createPlan: (data: Omit<Plan, 'id' | 'isSystem' | 'createdAt' | 'updatedAt'>) =>
+  createPlan: (data: Omit<Plan, 'id' | 'isSystem' | 'isArchived' | 'createdAt' | 'updatedAt' | 'subscriberCount'>) =>
     api.post<Plan>('/admin/plans', data).then(r => r.data),
-  updatePlan: (id: string, data: Omit<Plan, 'id' | 'isSystem' | 'createdAt' | 'updatedAt'>) =>
+  updatePlan: (id: string, data: Omit<Plan, 'id' | 'isSystem' | 'isArchived' | 'createdAt' | 'updatedAt' | 'subscriberCount'>) =>
     api.put<Plan>(`/admin/plans/${id}`, data).then(r => r.data),
   deletePlan: (id: string) =>
     api.delete(`/admin/plans/${id}`).then(r => r.data),
+  archivePlan: (id: string) =>
+    api.post(`/admin/plans/${id}/archive`).then(r => r.data),
+  unarchivePlan: (id: string) =>
+    api.post(`/admin/plans/${id}/unarchive`).then(r => r.data),
   listEntitlementKeys: () =>
     api.get<{ keys: EntitlementKeyInfo[] }>('/admin/entitlement-keys').then(r => r.data),
-  assignTenantPlan: (tenantId: string, planId: string | null, billingWaived?: boolean) =>
-    api.patch(`/admin/tenants/${tenantId}/plan`, { planId, billingWaived }).then(r => r.data),
+  assignTenantPlan: (tenantId: string, planId?: string | null, billingWaived?: boolean) => {
+    const body: Record<string, unknown> = {};
+    if (planId !== undefined) body.planId = planId || '';
+    if (billingWaived !== undefined) body.billingWaived = billingWaived;
+    return api.patch(`/admin/tenants/${tenantId}/plan`, body).then(r => r.data);
+  },
   listBundles: () =>
     api.get<{ bundles: CreditBundle[] }>('/admin/credit-bundles').then(r => r.data),
   createBundle: (data: Omit<CreditBundle, 'id' | 'createdAt' | 'updatedAt'>) =>
@@ -169,6 +179,42 @@ export const adminApi = {
     api.get<{ metrics: SystemMetric[]; from: string; to: string }>('/admin/health/metrics', { params }).then(r => r.data),
   getHealthCurrent: () =>
     api.get<{ metrics: SystemMetric[] }>('/admin/health/current').then(r => r.data),
+  getHealthIntegrations: () =>
+    api.get<{ integrations: IntegrationCheck[] }>('/admin/health/integrations').then(r => r.data),
+  listFinancialTransactions: (params?: { page?: number; perPage?: number; tenantId?: string; search?: string }) =>
+    api.get<{ transactions: FinancialTransaction[]; total: number; page: number; perPage: number }>('/admin/financial/transactions', { params }).then(r => r.data),
+  getFinancialMetrics: (params?: { range?: string; metric?: string }) =>
+    api.get<{ data: DailyMetricPoint[] }>('/admin/financial/metrics', { params }).then(r => r.data),
+  adminCancelSubscription: (tenantId: string, immediate: boolean) =>
+    api.post(`/admin/tenants/${tenantId}/cancel-subscription`, { immediate }).then(r => r.data),
+  adminUpdateSubscription: (tenantId: string, data: { currentPeriodEnd?: string }) =>
+    api.patch(`/admin/tenants/${tenantId}/subscription`, data).then(r => r.data),
+
+  // API Keys
+  listAPIKeys: () =>
+    api.get<{ apiKeys: APIKey[] }>('/admin/api-keys').then(r => r.data),
+  createAPIKey: (data: { name: string; authority: string }) =>
+    api.post<{ apiKey: APIKey; rawKey: string }>('/admin/api-keys', data).then(r => r.data),
+  deleteAPIKey: (id: string) =>
+    api.delete(`/admin/api-keys/${id}`).then(r => r.data),
+
+  // Webhooks
+  listWebhooks: () =>
+    api.get<{ webhooks: Webhook[] }>('/admin/webhooks').then(r => r.data),
+  getWebhook: (id: string) =>
+    api.get<{ webhook: Webhook; secret: string; deliveries: WebhookDelivery[] }>(`/admin/webhooks/${id}`).then(r => r.data),
+  createWebhook: (data: { name: string; description: string; url: string; events: string[] }) =>
+    api.post<{ webhook: Webhook; secret: string }>('/admin/webhooks', data).then(r => r.data),
+  updateWebhook: (id: string, data: { name: string; description: string; url: string; events: string[] }) =>
+    api.put<{ webhook: Webhook }>(`/admin/webhooks/${id}`, data).then(r => r.data),
+  deleteWebhook: (id: string) =>
+    api.delete(`/admin/webhooks/${id}`).then(r => r.data),
+  testWebhook: (id: string) =>
+    api.post<{ delivery: WebhookDelivery }>(`/admin/webhooks/${id}/test`).then(r => r.data),
+  regenerateWebhookSecret: (id: string) =>
+    api.post<{ secret: string; secretPreview: string }>(`/admin/webhooks/${id}/regenerate-secret`).then(r => r.data),
+  listWebhookEventTypes: () =>
+    api.get<{ eventTypes: WebhookEventTypeInfo[] }>('/admin/webhooks/event-types').then(r => r.data),
 };
 
 // --- Plans (public, authenticated) ---
@@ -181,6 +227,65 @@ export const plansApi = {
 export const bundlesApi = {
   list: () =>
     api.get<{ bundles: CreditBundle[] }>('/credit-bundles').then(r => r.data),
+};
+
+// --- Billing ---
+export const billingApi = {
+  checkout: (data: { planId?: string; bundleId?: string; billingInterval?: string }) =>
+    api.post<{ checkoutUrl?: string; waived?: boolean }>('/billing/checkout', data).then(r => r.data),
+  portal: () =>
+    api.post<{ portalUrl: string }>('/billing/portal').then(r => r.data),
+  listTransactions: (params?: { page?: number; perPage?: number }) =>
+    api.get<{ transactions: FinancialTransaction[]; total: number; page: number; perPage: number }>('/billing/transactions', { params }).then(r => r.data),
+  getInvoice: (id: string) =>
+    api.get<{ transaction: FinancialTransaction; tenant: { name: string } }>(`/billing/transactions/${id}/invoice`).then(r => r.data),
+  getInvoicePDF: (id: string) =>
+    api.get(`/billing/transactions/${id}/invoice/pdf`, { responseType: 'blob' }).then(r => r.data),
+  cancel: () =>
+    api.post<{ message: string; currentPeriodEnd?: string }>('/billing/cancel').then(r => r.data),
+  getConfig: () =>
+    api.get<{ publishableKey: string }>('/billing/config').then(r => r.data),
+};
+
+// --- Branding (public, no auth) ---
+export const brandingApi = {
+  get: () =>
+    api.get<BrandingConfig>('/branding').then(r => r.data),
+  getPublicPages: () =>
+    api.get<{ pages: CustomPage[] }>('/branding/pages').then(r => r.data),
+  getPublicPage: (slug: string) =>
+    api.get<CustomPage>(`/branding/page/${slug}`).then(r => r.data),
+};
+
+// --- Branding Admin ---
+export const brandingAdminApi = {
+  update: (data: Partial<BrandingConfig>) =>
+    api.put('/admin/branding', data).then(r => r.data),
+  uploadAsset: (key: 'logo' | 'favicon', file: File) => {
+    const form = new FormData();
+    form.append('key', key);
+    form.append('file', file);
+    return api.post('/admin/branding/asset', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data);
+  },
+  deleteAsset: (key: 'logo' | 'favicon') =>
+    api.delete(`/admin/branding/asset/${key}`).then(r => r.data),
+  listMedia: () =>
+    api.get<{ media: MediaItem[] }>('/admin/branding/media').then(r => r.data),
+  uploadMedia: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post<MediaItem>('/admin/branding/media', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data);
+  },
+  deleteMedia: (key: string) =>
+    api.delete(`/admin/branding/media/${key}`).then(r => r.data),
+  listPages: () =>
+    api.get<{ pages: CustomPage[] }>('/admin/branding/pages').then(r => r.data),
+  createPage: (data: Partial<CustomPage>) =>
+    api.post<CustomPage>('/admin/branding/pages', data).then(r => r.data),
+  updatePage: (id: string, data: Partial<CustomPage>) =>
+    api.put(`/admin/branding/pages/${id}`, data).then(r => r.data),
+  deletePage: (id: string) =>
+    api.delete(`/admin/branding/pages/${id}`).then(r => r.data),
 };
 
 export default api;

@@ -7,11 +7,14 @@ import {
   Mail,
   FileText,
   CreditCard,
+  DollarSign,
   Activity,
   Settings,
   Info,
   ArrowLeft,
   Shield,
+  Code2,
+  Paintbrush,
 } from 'lucide-react';
 import { useTenant } from '../contexts/TenantContext';
 import { messagesApi } from '../api/client';
@@ -40,9 +43,12 @@ export default function AdminLayout() {
     { path: '/last/users', icon: Users, label: 'Users' },
     { path: '/last/tenants', icon: Building2, label: 'Tenants' },
     { path: '/last/plans', icon: CreditCard, label: 'Plans' },
+    { path: '/last/financial', icon: DollarSign, label: 'Financial' },
     { path: '/last/health', icon: Activity, label: 'System Health' },
     { path: '/last/logs', icon: FileText, label: 'Logs' },
     { path: '/last/config', icon: Settings, label: 'Configuration' },
+    { path: '/last/branding', icon: Paintbrush, label: 'Branding' },
+    { path: '/last/api', icon: Code2, label: 'API' },
     { path: '/last/about', icon: Info, label: 'About' },
   ];
 

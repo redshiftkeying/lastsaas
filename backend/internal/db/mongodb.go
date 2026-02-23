@@ -58,6 +58,7 @@ func (m *MongoDB) ensureIndexes() {
 			[]mongo.IndexModel{
 				{Keys: bson.D{{Key: "email", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
 				{Keys: bson.D{{Key: "googleId", Value: 1}}, Options: options.Index().SetSparse(true)},
+				{Keys: bson.D{{Key: "displayName", Value: 1}}},
 			},
 		},
 		{
@@ -65,6 +66,7 @@ func (m *MongoDB) ensureIndexes() {
 			[]mongo.IndexModel{
 				{Keys: bson.D{{Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
 				{Keys: bson.D{{Key: "isRoot", Value: 1}}},
+				{Keys: bson.D{{Key: "name", Value: 1}}},
 			},
 		},
 		{
@@ -156,6 +158,40 @@ func (m *MongoDB) ensureIndexes() {
 			},
 		},
 		{
+			"financial_transactions",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "invoiceNumber", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"stripe_mappings",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "entityType", Value: 1}, {Key: "entityId", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"daily_metrics",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "date", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(400 * 24 * 3600)},
+			},
+		},
+		{
+			"leader_locks",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+			},
+		},
+		{
+			"webhook_events",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "eventId", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
+			},
+		},
+		{
 			"system_nodes",
 			[]mongo.IndexModel{
 				{Keys: bson.D{{Key: "machineId", Value: 1}}, Options: options.Index().SetUnique(true)},
@@ -167,6 +203,40 @@ func (m *MongoDB) ensureIndexes() {
 			[]mongo.IndexModel{
 				{Keys: bson.D{{Key: "timestamp", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
 				{Keys: bson.D{{Key: "nodeId", Value: 1}, {Key: "timestamp", Value: -1}}},
+			},
+		},
+		{
+			"api_keys",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "keyHash", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "createdBy", Value: 1}, {Key: "createdAt", Value: -1}}},
+			},
+		},
+		{
+			"webhooks",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "createdBy", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "events", Value: 1}, {Key: "isActive", Value: 1}}},
+			},
+		},
+		{
+			"webhook_deliveries",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "webhookId", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600)},
+			},
+		},
+		{
+			"branding_assets",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "key", Value: 1}}, Options: options.Index().SetUnique(true)},
+			},
+		},
+		{
+			"custom_pages",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "slug", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "isPublished", Value: 1}, {Key: "sortOrder", Value: 1}}},
 			},
 		},
 	}
@@ -252,4 +322,52 @@ func (m *MongoDB) SystemNodes() *mongo.Collection {
 
 func (m *MongoDB) SystemMetrics() *mongo.Collection {
 	return m.Database.Collection("system_metrics")
+}
+
+func (m *MongoDB) FinancialTransactions() *mongo.Collection {
+	return m.Database.Collection("financial_transactions")
+}
+
+func (m *MongoDB) StripeMappings() *mongo.Collection {
+	return m.Database.Collection("stripe_mappings")
+}
+
+func (m *MongoDB) Counters() *mongo.Collection {
+	return m.Database.Collection("counters")
+}
+
+func (m *MongoDB) DailyMetrics() *mongo.Collection {
+	return m.Database.Collection("daily_metrics")
+}
+
+func (m *MongoDB) WebhookEvents() *mongo.Collection {
+	return m.Database.Collection("webhook_events")
+}
+
+func (m *MongoDB) LeaderLocks() *mongo.Collection {
+	return m.Database.Collection("leader_locks")
+}
+
+func (m *MongoDB) APIKeys() *mongo.Collection {
+	return m.Database.Collection("api_keys")
+}
+
+func (m *MongoDB) Webhooks() *mongo.Collection {
+	return m.Database.Collection("webhooks")
+}
+
+func (m *MongoDB) WebhookDeliveries() *mongo.Collection {
+	return m.Database.Collection("webhook_deliveries")
+}
+
+func (m *MongoDB) BrandingConfig() *mongo.Collection {
+	return m.Database.Collection("branding_config")
+}
+
+func (m *MongoDB) BrandingAssets() *mongo.Collection {
+	return m.Database.Collection("branding_assets")
+}
+
+func (m *MongoDB) CustomPages() *mongo.Collection {
+	return m.Database.Collection("custom_pages")
 }

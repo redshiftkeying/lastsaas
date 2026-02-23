@@ -37,7 +37,8 @@ type SystemMetric struct {
 	Network   NetworkMetrics     `json:"network" bson:"network"`
 	HTTP      HTTPMetrics        `json:"http" bson:"http"`
 	Mongo     MongoMetrics       `json:"mongo" bson:"mongo"`
-	GoRuntime GoRuntimeMetrics   `json:"goRuntime" bson:"goRuntime"`
+	GoRuntime    GoRuntimeMetrics        `json:"goRuntime" bson:"goRuntime"`
+	Integrations IntegrationCountMetrics `json:"integrations" bson:"integrations"`
 }
 
 type CPUMetrics struct {
@@ -87,4 +88,28 @@ type GoRuntimeMetrics struct {
 	HeapSys      uint64 `json:"heapSys" bson:"heapSys"`
 	GCPauseNs    uint64 `json:"gcPauseNs" bson:"gcPauseNs"`
 	NumGC        uint32 `json:"numGC" bson:"numGC"`
+}
+
+type IntegrationCountMetrics struct {
+	StripeAPICalls int64 `json:"stripeApiCalls" bson:"stripeApiCalls"`
+	ResendEmails   int64 `json:"resendEmails" bson:"resendEmails"`
+}
+
+// Integration health check types (in-memory only, no BSON persistence)
+
+type IntegrationStatus string
+
+const (
+	IntegrationHealthy       IntegrationStatus = "healthy"
+	IntegrationUnhealthy     IntegrationStatus = "unhealthy"
+	IntegrationNotConfigured IntegrationStatus = "not_configured"
+)
+
+type IntegrationCheck struct {
+	Name       string            `json:"name"`
+	Status     IntegrationStatus `json:"status"`
+	Message    string            `json:"message"`
+	LastCheck  time.Time         `json:"lastCheck"`
+	ResponseMs int64             `json:"responseMs"`
+	Calls24h   int64             `json:"calls24h"`
 }

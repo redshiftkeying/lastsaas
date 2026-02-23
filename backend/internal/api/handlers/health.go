@@ -74,6 +74,27 @@ func (h *HealthHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{"metrics": metrics})
 }
 
+// GetIntegrations handles GET /api/admin/health/integrations
+func (h *HealthHandler) GetIntegrations(w http.ResponseWriter, r *http.Request) {
+	results := h.service.GetIntegrationStatus()
+	if results == nil {
+		results = []models.IntegrationCheck{}
+	}
+
+	// Enrich with 24h call counts
+	stripeCalls, resendEmails := h.service.GetIntegrationCounts24h(r.Context())
+	for i := range results {
+		switch results[i].Name {
+		case "stripe":
+			results[i].Calls24h = stripeCalls
+		case "resend":
+			results[i].Calls24h = resendEmails
+		}
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{"integrations": results})
+}
+
 func parseTimeRange(rangeStr string, to time.Time) time.Time {
 	switch rangeStr {
 	case "1h":

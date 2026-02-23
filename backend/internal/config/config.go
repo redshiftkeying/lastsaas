@@ -18,6 +18,7 @@ type Config struct {
 	OAuth       OAuthConfig      `yaml:"oauth"`
 	Email       EmailConfig      `yaml:"email"`
 	App         AppConfig        `yaml:"app"`
+	Stripe      StripeConfig     `yaml:"stripe"`
 }
 
 type ServerConfig struct {
@@ -56,6 +57,12 @@ type EmailConfig struct {
 
 type AppConfig struct {
 	Name string `yaml:"name"`
+}
+
+type StripeConfig struct {
+	SecretKey      string `yaml:"secret_key"`
+	PublishableKey string `yaml:"publishable_key"`
+	WebhookSecret  string `yaml:"webhook_secret"`
 }
 
 // LoadEnvFile loads a .env file into the process environment if it exists.

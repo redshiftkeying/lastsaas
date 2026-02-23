@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"text/template"
+
+	"lastsaas/internal/apicounter"
 )
 
 type ResendService struct {
@@ -76,6 +78,7 @@ func (s *ResendService) SendEmail(to, subject, html string) error {
 		return fmt.Errorf("email API returned status %d", resp.StatusCode)
 	}
 
+	apicounter.ResendEmails.Add(1)
 	log.Printf("Email sent successfully to %s", to)
 	return nil
 }

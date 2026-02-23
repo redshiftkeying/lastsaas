@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { CreditCard, Plus, Trash2, X, Shield, AlertTriangle, Zap } from 'lucide-react';
+import { CreditCard, Plus, Trash2, X, Shield, AlertTriangle, Zap, Archive, RotateCcw } from 'lucide-react';
 import { adminApi } from '../../api/client';
 import type { Plan, EntitlementValue, EntitlementType, EntitlementKeyInfo, CreditBundle } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -62,6 +62,24 @@ export default function PlansPage() {
     }
   };
 
+  const handleArchive = async (plan: Plan) => {
+    try {
+      await adminApi.archivePlan(plan.id);
+      fetchPlans();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleUnarchive = async (plan: Plan) => {
+    try {
+      await adminApi.unarchivePlan(plan.id);
+      fetchPlans();
+    } catch {
+      // ignore
+    }
+  };
+
   const confirmDeleteBundle = async () => {
     if (!deleteBundleTarget) return;
     setDeletingBundle(true);
@@ -110,10 +128,10 @@ export default function PlansPage() {
           <thead>
             <tr className="border-b border-dark-800">
               <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Name</th>
-              <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Description</th>
+              <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Status</th>
               <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Price</th>
+              <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Subscribers</th>
               <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Credits</th>
-              <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">User Limit</th>
               <th className="text-left px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Entitlements</th>
               <th className="text-right px-6 py-4 text-xs font-semibold text-dark-400 uppercase tracking-wider">Actions</th>
             </tr>
@@ -123,25 +141,41 @@ export default function PlansPage() {
               <tr
                 key={plan.id}
                 onClick={() => setEditPlan(plan)}
-                className="hover:bg-dark-800/30 transition-colors cursor-pointer"
+                className={`hover:bg-dark-800/30 transition-colors cursor-pointer ${plan.isArchived ? 'opacity-50' : ''}`}
               >
                 <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-medium">{plan.name}</span>
-                    {plan.isSystem && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-primary-500/20 text-primary-400 rounded-full">
-                        <Shield className="w-3 h-3" />
-                        System
-                      </span>
-                    )}
-                  </div>
+                  <span className="text-white font-medium">{plan.name}</span>
+                  {plan.description && <div className="text-xs text-dark-500 mt-0.5">{plan.description}</div>}
                 </td>
-                <td className="px-6 py-4 text-dark-300 text-sm">{plan.description || '—'}</td>
+                <td className="px-6 py-4">
+                  {plan.isSystem ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-primary-500/20 text-primary-400 rounded-full">
+                      <Shield className="w-3 h-3" />
+                      System
+                    </span>
+                  ) : plan.isArchived ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-amber-500/20 text-amber-400 rounded-full">
+                      <Archive className="w-3 h-3" />
+                      Archived
+                    </span>
+                  ) : (
+                    <span className="inline-flex px-2 py-0.5 text-xs font-medium bg-accent-emerald/10 text-accent-emerald rounded-full">
+                      Active
+                    </span>
+                  )}
+                </td>
                 <td className="px-6 py-4 text-dark-300 text-sm">
                   {plan.monthlyPriceCents === 0 ? 'Free' : `${formatPrice(plan.monthlyPriceCents)}/mo`}
                   {plan.annualDiscountPct > 0 && (
                     <span className="ml-1 text-xs text-accent-green">({plan.annualDiscountPct}% annual)</span>
                   )}
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full tabular-nums ${
+                    (plan.subscriberCount ?? 0) > 0 ? 'bg-primary-500/10 text-primary-400' : 'bg-dark-700 text-dark-500'
+                  }`}>
+                    {plan.subscriberCount ?? 0}
+                  </span>
                 </td>
                 <td className="px-6 py-4 text-dark-300 text-sm">
                   {plan.usageCreditsPerMonth > 0 ? (
@@ -151,7 +185,6 @@ export default function PlansPage() {
                     <span className="ml-1 text-xs text-accent-purple">+{plan.bonusCredits} bonus</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-dark-300 text-sm">{plan.userLimit === 0 ? 'Unlimited' : plan.userLimit}</td>
                 <td className="px-6 py-4 text-sm">
                   {Object.keys(plan.entitlements || {}).length === 0 ? (
                     <span className="text-dark-500">—</span>
@@ -170,15 +203,35 @@ export default function PlansPage() {
                   )}
                 </td>
                 <td className="px-6 py-4 text-right">
-                  {!plan.isSystem && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(plan); }}
-                      className="p-2 text-dark-400 hover:text-red-400 transition-colors"
-                      title="Delete plan"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center justify-end gap-1">
+                    {!plan.isSystem && !plan.isArchived && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleArchive(plan); }}
+                        className="p-2 text-dark-400 hover:text-amber-400 transition-colors"
+                        title="Archive plan"
+                      >
+                        <Archive className="w-4 h-4" />
+                      </button>
+                    )}
+                    {!plan.isSystem && plan.isArchived && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleUnarchive(plan); }}
+                        className="p-2 text-dark-400 hover:text-accent-emerald transition-colors"
+                        title="Unarchive plan"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </button>
+                    )}
+                    {!plan.isSystem && (plan.subscriberCount ?? 0) === 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(plan); }}
+                        className="p-2 text-dark-400 hover:text-red-400 transition-colors"
+                        title="Delete plan"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -198,6 +251,7 @@ export default function PlansPage() {
       {editPlan && (
         <PlanFormModal
           plan={editPlan}
+          subscriberCount={editPlan.subscriberCount}
           onClose={() => setEditPlan(null)}
           onSaved={() => { setEditPlan(null); fetchPlans(); }}
         />
@@ -373,11 +427,12 @@ export default function PlansPage() {
 
 interface PlanFormModalProps {
   plan?: Plan;
+  subscriberCount?: number;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function PlanFormModal({ plan, onClose, onSaved }: PlanFormModalProps) {
+function PlanFormModal({ plan, subscriberCount, onClose, onSaved }: PlanFormModalProps) {
   const isEdit = !!plan;
 
   const [name, setName] = useState(plan?.name ?? '');
@@ -479,6 +534,15 @@ function PlanFormModal({ plan, onClose, onSaved }: PlanFormModalProps) {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {isEdit && (subscriberCount ?? 0) > 0 && (
+          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+            <p className="text-sm text-amber-400">
+              <strong>{subscriberCount} tenant{subscriberCount !== 1 ? 's' : ''}</strong> subscribed to this plan. Changes to pricing, credits, limits, and entitlements will affect existing subscribers.
+            </p>
+          </div>
+        )}
 
         <div className="space-y-6">
           {/* Basics */}

@@ -1,9 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Save, Building2, Zap, Users } from 'lucide-react';
+import { ArrowLeft, Save, Building2, Zap, Users, CreditCard, XCircle, AlertTriangle } from 'lucide-react';
 import { adminApi } from '../../api/client';
 import type { TenantDetail, TenantMember, Plan } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+
+function formatPrice(cents: number): string {
+  if (cents === 0) return 'Free';
+  return `$${(cents / 100).toFixed(2)}`;
+}
 
 export default function TenantProfilePage() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -16,10 +21,17 @@ export default function TenantProfilePage() {
 
   // Edit fields
   const [name, setName] = useState('');
-  const [billingWaived, setBillingWaived] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
+
+  // Plan & billing fields
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [billingWaived, setBillingWaived] = useState(false);
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planError, setPlanError] = useState('');
+  const [planSuccess, setPlanSuccess] = useState('');
 
   // Credit fields
   const [subscriptionCredits, setSubscriptionCredits] = useState(0);
@@ -28,8 +40,9 @@ export default function TenantProfilePage() {
   const [creditError, setCreditError] = useState('');
   const [creditSuccess, setCreditSuccess] = useState('');
 
-  // Plan name lookup
-  const [planName, setPlanName] = useState('Free');
+  // Billing
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   const fetchTenant = useCallback(async () => {
     if (!tenantId) return;
@@ -43,18 +56,10 @@ export default function TenantProfilePage() {
       setMembers(tenantData.members || []);
       setName(tenantData.tenant.name);
       setBillingWaived(tenantData.tenant.billingWaived);
+      setSelectedPlanId(tenantData.tenant.planId || '');
       setSubscriptionCredits(tenantData.tenant.subscriptionCredits);
       setPurchasedCredits(tenantData.tenant.purchasedCredits);
-
-      // Resolve plan name
-      const plans = plansData.plans || [];
-      if (tenantData.tenant.planId) {
-        const p = plans.find((pl: Plan) => pl.id === tenantData.tenant.planId);
-        if (p) setPlanName(p.name);
-      } else {
-        const sys = plans.find((pl: Plan) => pl.isSystem);
-        if (sys) setPlanName(sys.name);
-      }
+      setPlans(plansData.plans || []);
     } catch {
       setFetchError('Failed to load tenant');
     } finally {
@@ -70,9 +75,8 @@ export default function TenantProfilePage() {
     setSaveError('');
     setSaveSuccess('');
     try {
-      const updates: { name?: string; billingWaived?: boolean } = {};
+      const updates: { name?: string } = {};
       if (name.trim() !== tenant.name) updates.name = name.trim();
-      if (billingWaived !== tenant.billingWaived) updates.billingWaived = billingWaived;
       if (Object.keys(updates).length === 0) {
         setSaveSuccess('No changes to save');
         setSaving(false);
@@ -86,6 +90,33 @@ export default function TenantProfilePage() {
       setSaveError(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSavePlan = async () => {
+    if (!tenant) return;
+    const planChanged = selectedPlanId !== (tenant.planId || '');
+    const waivedChanged = billingWaived !== tenant.billingWaived;
+    if (!planChanged && !waivedChanged) {
+      setPlanSuccess('No changes to save');
+      return;
+    }
+    setSavingPlan(true);
+    setPlanError('');
+    setPlanSuccess('');
+    try {
+      await adminApi.assignTenantPlan(
+        tenant.id,
+        planChanged ? (selectedPlanId || null) : undefined as unknown as string | null,
+        waivedChanged ? billingWaived : undefined,
+      );
+      setPlanSuccess('Plan updated successfully');
+      await fetchTenant();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to update plan';
+      setPlanError(msg);
+    } finally {
+      setSavingPlan(false);
     }
   };
 
@@ -124,6 +155,20 @@ export default function TenantProfilePage() {
     }
   };
 
+  const handleCancelSubscription = async (immediate: boolean) => {
+    if (!tenant) return;
+    setCancellingSubscription(true);
+    try {
+      await adminApi.adminCancelSubscription(tenant.id, immediate);
+      setShowCancelModal(false);
+      await fetchTenant();
+    } catch {
+      // ignore
+    } finally {
+      setCancellingSubscription(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner size="lg" className="py-20" />;
 
   if (fetchError || !tenant) {
@@ -136,6 +181,20 @@ export default function TenantProfilePage() {
       </div>
     );
   }
+
+  // Derive warnings for plan & billing section
+  const selectedPlan = plans.find(p => p.id === selectedPlanId);
+  const systemPlan = plans.find(p => p.isSystem);
+  const currentPlanName = plans.find(p => p.id === tenant.planId)?.name || systemPlan?.name || 'Free';
+  const selectedIsPaid = selectedPlan ? selectedPlan.monthlyPriceCents > 0 : false;
+  const hasActiveSubscription = !!tenant.stripeSubscriptionId && (tenant.billingStatus === 'active' || tenant.billingStatus === 'past_due');
+
+  // Warning: waiving billing while they have an active subscription
+  const showWaiveWarning = billingWaived && !tenant.billingWaived && hasActiveSubscription;
+  // Warning: removing waiver on a paid plan with no subscription
+  const showUnwaiveWarning = !billingWaived && tenant.billingWaived && selectedIsPaid && !hasActiveSubscription;
+  // Warning: assigning paid plan without waiver and no subscription
+  const showPaidNoWaiverWarning = selectedIsPaid && !billingWaived && !hasActiveSubscription;
 
   return (
     <div>
@@ -176,12 +235,42 @@ export default function TenantProfilePage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+          {saveError && <span className="text-red-400 text-sm">{saveError}</span>}
+          {saveSuccess && <span className="text-green-400 text-sm">{saveSuccess}</span>}
+        </div>
+      </div>
+
+      {/* Plan & Billing */}
+      <div className="bg-dark-900/50 border border-dark-800 rounded-2xl p-6 mb-6">
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-dark-400" />
+          Plan &amp; Billing
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm text-dark-400 mb-1">Plan</label>
-            <div className="px-3 py-2 bg-dark-800/50 border border-dark-700 rounded-lg text-dark-300 text-sm">
-              {planName}
-            </div>
+            <select
+              value={selectedPlanId}
+              onChange={(e) => setSelectedPlanId(e.target.value)}
+              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white focus:outline-none focus:border-primary-500"
+            >
+              <option value="">{systemPlan ? `${systemPlan.name} (Default)` : 'System Default'}</option>
+              {plans.filter(p => !p.isSystem).map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{p.isArchived ? ' (Archived)' : ''} — {formatPrice(p.monthlyPriceCents)}/mo
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-dark-500 mt-1">Currently: {currentPlanName}</p>
           </div>
           <div>
             <label className="block text-sm text-dark-400 mb-1">Billing Waived</label>
@@ -195,19 +284,49 @@ export default function TenantProfilePage() {
             >
               {billingWaived ? 'Yes' : 'No'}
             </button>
+            <p className="text-xs text-dark-500 mt-1">
+              {billingWaived ? 'Tenant uses paid features without being charged' : 'Tenant must pay via Stripe for paid plans'}
+            </p>
           </div>
         </div>
+
+        {/* Contextual warnings */}
+        {showWaiveWarning && (
+          <div className="mb-4 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-300">
+              This tenant has an active Stripe subscription. Waiving billing will <strong>cancel their subscription immediately</strong> and they will no longer be charged.
+            </p>
+          </div>
+        )}
+        {showUnwaiveWarning && (
+          <div className="mb-4 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-300">
+              This tenant is on a paid plan with no Stripe subscription. Removing the billing waiver will <strong>downgrade them to {systemPlan?.name || 'the default plan'}</strong>. They can then subscribe to a paid plan through the normal checkout flow.
+            </p>
+          </div>
+        )}
+        {showPaidNoWaiverWarning && !showUnwaiveWarning && (
+          <div className="mb-4 bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-300">
+              You're assigning a paid plan without waiving billing. This tenant has no active subscription to cover the cost. Either <strong>enable billing waived</strong> or let the tenant subscribe through the checkout flow.
+            </p>
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <button
-            onClick={handleSave}
-            disabled={saving}
+            onClick={handleSavePlan}
+            disabled={savingPlan}
             className="px-4 py-2 text-sm font-medium bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : 'Save Changes'}
+            {savingPlan ? 'Saving...' : 'Save Plan'}
           </button>
-          {saveError && <span className="text-red-400 text-sm">{saveError}</span>}
-          {saveSuccess && <span className="text-green-400 text-sm">{saveSuccess}</span>}
+          {planError && <span className="text-red-400 text-sm">{planError}</span>}
+          {planSuccess && <span className="text-green-400 text-sm">{planSuccess}</span>}
         </div>
       </div>
 
@@ -281,6 +400,97 @@ export default function TenantProfilePage() {
           )}
         </div>
       </div>
+
+      {/* Billing Info */}
+      {tenant.billingStatus && tenant.billingStatus !== 'none' && (
+        <div className="bg-dark-900/50 border border-dark-800 rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-dark-400" />
+            Stripe Subscription
+          </h2>
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-dark-400">Status</span>
+              <span className={`text-sm font-medium ${
+                tenant.billingStatus === 'active' ? 'text-accent-emerald' :
+                tenant.billingStatus === 'past_due' ? 'text-red-400' :
+                tenant.billingStatus === 'canceled' ? 'text-yellow-400' :
+                'text-dark-400'
+              }`}>
+                {tenant.billingStatus === 'active' ? 'Active' :
+                 tenant.billingStatus === 'past_due' ? 'Past Due' :
+                 tenant.billingStatus === 'canceled' ? 'Canceled' :
+                 tenant.billingStatus}
+              </span>
+            </div>
+            {tenant.stripeSubscriptionId && (
+              <div className="flex items-center justify-between py-2 border-t border-dark-800">
+                <span className="text-sm text-dark-400">Subscription ID</span>
+                <span className="text-sm text-dark-300 font-mono">{tenant.stripeSubscriptionId}</span>
+              </div>
+            )}
+            {tenant.billingInterval && (
+              <div className="flex items-center justify-between py-2 border-t border-dark-800">
+                <span className="text-sm text-dark-400">Billing Interval</span>
+                <span className="text-sm text-white capitalize">{tenant.billingInterval}ly</span>
+              </div>
+            )}
+            {tenant.currentPeriodEnd && (
+              <div className="flex items-center justify-between py-2 border-t border-dark-800">
+                <span className="text-sm text-dark-400">Period End</span>
+                <span className="text-sm text-white">{new Date(tenant.currentPeriodEnd).toLocaleDateString()}</span>
+              </div>
+            )}
+            {tenant.canceledAt && (
+              <div className="flex items-center justify-between py-2 border-t border-dark-800">
+                <span className="text-sm text-dark-400">Canceled At</span>
+                <span className="text-sm text-yellow-400">{new Date(tenant.canceledAt).toLocaleDateString()}</span>
+              </div>
+            )}
+          </div>
+          {tenant.stripeSubscriptionId && tenant.billingStatus === 'active' && (
+            <button
+              onClick={() => setShowCancelModal(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 transition-colors"
+            >
+              <XCircle className="w-4 h-4" />
+              Cancel Subscription
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Cancel Subscription Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-dark-900 border border-dark-700 rounded-2xl p-6 max-w-md mx-4 w-full">
+            <h3 className="text-lg font-semibold text-white mb-4">Cancel Subscription</h3>
+            <p className="text-dark-300 mb-6">Choose how to cancel this tenant's subscription:</p>
+            <div className="space-y-3">
+              <button
+                onClick={() => handleCancelSubscription(false)}
+                disabled={cancellingSubscription}
+                className="w-full px-4 py-2.5 text-sm font-medium bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded-lg hover:bg-yellow-500/30 transition-colors disabled:opacity-60"
+              >
+                Cancel at Period End
+              </button>
+              <button
+                onClick={() => handleCancelSubscription(true)}
+                disabled={cancellingSubscription}
+                className="w-full px-4 py-2.5 text-sm font-medium bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors disabled:opacity-60"
+              >
+                Cancel Immediately
+              </button>
+              <button
+                onClick={() => setShowCancelModal(false)}
+                className="w-full px-4 py-2 text-sm text-dark-400 hover:text-white transition-colors"
+              >
+                Keep Subscription
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Members */}
       <div className="bg-dark-900/50 border border-dark-800 rounded-2xl p-6">

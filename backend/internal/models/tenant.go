@@ -12,10 +12,16 @@ type Tenant struct {
 	Slug      string             `json:"slug" bson:"slug"`
 	IsRoot    bool               `json:"isRoot" bson:"isRoot"`
 	IsActive  bool                `json:"isActive" bson:"isActive"`
-	PlanID              *primitive.ObjectID `json:"planId,omitempty" bson:"planId,omitempty"`
-	BillingWaived       bool               `json:"billingWaived" bson:"billingWaived"`
-	SubscriptionCredits int64              `json:"subscriptionCredits" bson:"subscriptionCredits"`
-	PurchasedCredits    int64              `json:"purchasedCredits" bson:"purchasedCredits"`
-	CreatedAt           time.Time          `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time          `json:"updatedAt" bson:"updatedAt"`
+	PlanID               *primitive.ObjectID `json:"planId,omitempty" bson:"planId,omitempty"`
+	BillingWaived        bool               `json:"billingWaived" bson:"billingWaived"`
+	SubscriptionCredits  int64              `json:"subscriptionCredits" bson:"subscriptionCredits"`
+	PurchasedCredits     int64              `json:"purchasedCredits" bson:"purchasedCredits"`
+	StripeCustomerID     string             `json:"stripeCustomerId,omitempty" bson:"stripeCustomerId,omitempty"`
+	BillingStatus        BillingStatus      `json:"billingStatus" bson:"billingStatus"`
+	StripeSubscriptionID string             `json:"stripeSubscriptionId,omitempty" bson:"stripeSubscriptionId,omitempty"`
+	BillingInterval      string             `json:"billingInterval,omitempty" bson:"billingInterval,omitempty"`
+	CurrentPeriodEnd     *time.Time         `json:"currentPeriodEnd,omitempty" bson:"currentPeriodEnd,omitempty"`
+	CanceledAt           *time.Time         `json:"canceledAt,omitempty" bson:"canceledAt,omitempty"`
+	CreatedAt            time.Time          `json:"createdAt" bson:"createdAt"`
+	UpdatedAt            time.Time          `json:"updatedAt" bson:"updatedAt"`
 }

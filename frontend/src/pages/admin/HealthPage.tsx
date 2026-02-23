@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Activity } from 'lucide-react';
 import { adminApi } from '../../api/client';
-import type { SystemNode, SystemMetric, TimeRange, NodeFilterMode } from '../../types';
+import type { SystemNode, SystemMetric, TimeRange, NodeFilterMode, IntegrationCheck } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import NodeCards from './health/NodeCards';
+import IntegrationsPanel from './health/IntegrationsPanel';
 import CurrentStatusPanel from './health/CurrentStatusPanel';
 import TimeRangeSelector from './health/TimeRangeSelector';
 import MetricsCharts from './health/MetricsCharts';
@@ -15,16 +16,19 @@ export default function HealthPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
   const [filterMode, setFilterMode] = useState<NodeFilterMode>('aggregate');
   const [selectedNode, setSelectedNode] = useState('');
+  const [integrations, setIntegrations] = useState<IntegrationCheck[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchCurrent = useCallback(async () => {
     try {
-      const [nodesData, currentData] = await Promise.all([
+      const [nodesData, currentData, intData] = await Promise.all([
         adminApi.listHealthNodes(),
         adminApi.getHealthCurrent(),
+        adminApi.getHealthIntegrations(),
       ]);
       setNodes(nodesData.nodes);
       setCurrentMetrics(currentData.metrics);
+      setIntegrations(intData.integrations);
       if (!selectedNode && nodesData.nodes.length > 0) {
         setSelectedNode(nodesData.nodes[0].machineId);
       }
@@ -83,6 +87,7 @@ export default function HealthPage() {
 
       <div className="space-y-6">
         <NodeCards nodes={nodes} />
+        <IntegrationsPanel integrations={integrations} />
         <CurrentStatusPanel metrics={currentMetrics} />
         <TimeRangeSelector
           timeRange={timeRange}
