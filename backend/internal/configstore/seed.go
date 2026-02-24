@@ -302,6 +302,13 @@ var SystemDefaults = []models.ConfigVar{
 		IsSystem:    true,
 	},
 	{
+		Name:        "billing.default_currency",
+		Description: "Default currency for Stripe billing (e.g. usd, eur, gbp). Must be a valid Stripe currency code.",
+		Type:        models.ConfigTypeString,
+		Value:       "usd",
+		IsSystem:    true,
+	},
+	{
 		Name:        "email.magic_link.subject",
 		Description: "Subject line for the magic link login email. Supports {{.AppName}}.",
 		Type:        models.ConfigTypeTemplate,

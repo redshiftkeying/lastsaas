@@ -234,6 +234,7 @@ export interface Plan {
   maxSeats: number;
   entitlements: Record<string, EntitlementValue>;
   isSystem: boolean;
+  trialDays: number;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -264,6 +265,7 @@ export interface PublicPlansResponse {
   entitlementUpgradePromptTitle: string;
   entitlementUpgradePromptBody: string;
   entitlementUpgradePromptNumericBody: string;
+  currency: string;
 }
 
 export interface CreditBundle {
@@ -275,6 +277,34 @@ export interface CreditBundle {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Announcements ---
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  isPublished: boolean;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// --- Promotions ---
+
+export interface Promotion {
+  id: string;
+  code: string;
+  active: boolean;
+  couponId: string;
+  couponName: string;
+  percentOff: number;
+  amountOff: number;
+  currency: string;
+  timesRedeemed: number;
+  maxRedemptions: number;
+  created: number;
 }
 
 // --- System Health ---
@@ -442,6 +472,8 @@ export interface WebhookDelivery {
   responseBody: string;
   success: boolean;
   durationMs: number;
+  retryCount: number;
+  maxRetries: number;
   createdAt: string;
 }
 
@@ -539,4 +571,20 @@ export interface ImpersonationResponse {
   accessToken: string;
   user: User;
   memberships: MembershipInfo[];
+}
+
+// --- Usage Metering ---
+
+export interface UsageSummaryItem {
+  type: string;
+  totalQuantity: number;
+  count: number;
+}
+
+export interface UsageSummary {
+  periodStart: string;
+  usage: UsageSummaryItem[];
+  totalCreditsUsed: number;
+  subscriptionCredits: number;
+  purchasedCredits: number;
 }

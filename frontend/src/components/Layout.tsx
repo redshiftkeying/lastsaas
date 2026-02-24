@@ -1,13 +1,15 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Settings, LogOut, Shield, ChevronDown, Bell, CreditCard, Zap,
-  FileText, Image, Globe, Star, Heart, BookOpen, MessageCircle, HelpCircle, Sun, Moon,
+  FileText, Image, Globe, Star, Heart, BookOpen, MessageCircle, HelpCircle, Sun, Moon, Megaphone,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../contexts/TenantContext';
 import { useBranding } from '../contexts/BrandingContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { messagesApi, plansApi, bundlesApi } from '../api/client';
+import { messagesApi, plansApi, bundlesApi, announcementsApi } from '../api/client';
+import { getErrorMessage } from '../utils/errors';
 import ImpersonationBanner from './ImpersonationBanner';
 import { useState, useRef, useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -29,6 +31,10 @@ export default function Layout() {
   const [tenantCredits, setTenantCredits] = useState(0);
   const [hasBundles, setHasBundles] = useState(false);
   const [showTeam, setShowTeam] = useState(true);
+  const [latestAnnouncement, setLatestAnnouncement] = useState<{ id: string; title: string } | null>(null);
+  const [dismissedAnnouncement, setDismissedAnnouncement] = useState<string>(() =>
+    localStorage.getItem('dismissed_announcement') || ''
+  );
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isActive = (path: string) => location.pathname === path;
@@ -37,7 +43,7 @@ export default function Layout() {
     if (isAuthenticated) {
       messagesApi.unreadCount()
         .then((data) => setUnreadCount(data.count))
-        .catch(() => {});
+        .catch(() => console.debug('Failed to fetch unread count'));
       plansApi.list()
         .then((data) => {
           const hasCredits = data.plans.some(p => p.usageCreditsPerMonth > 0 || p.bonusCredits > 0);
@@ -45,10 +51,17 @@ export default function Layout() {
           setTenantCredits(data.tenantSubscriptionCredits + data.tenantPurchasedCredits);
           setShowTeam(data.maxPlanUserLimit !== 1);
         })
-        .catch(() => {});
+        .catch(err => toast.error(getErrorMessage(err)));
       bundlesApi.list()
         .then((data) => setHasBundles(data.bundles.length > 0))
-        .catch(() => {});
+        .catch(() => console.debug('Failed to fetch bundles'));
+      announcementsApi.list()
+        .then((data) => {
+          if (data.announcements.length > 0) {
+            setLatestAnnouncement({ id: data.announcements[0].id, title: data.announcements[0].title });
+          }
+        })
+        .catch(() => console.debug('Failed to fetch announcements'));
     }
   }, [isAuthenticated]);
 
@@ -209,6 +222,7 @@ export default function Layout() {
                   onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
                   className="text-dark-400 hover:text-white transition-colors"
                   title={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+                  aria-label="Toggle theme"
                 >
                   {resolvedTheme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
@@ -217,6 +231,7 @@ export default function Layout() {
                 <Link
                   to="/messages"
                   className="relative text-dark-400 hover:text-white transition-colors"
+                  aria-label="Messages"
                 >
                   <Bell className="w-5 h-5" />
                   {unreadCount > 0 && (
@@ -231,6 +246,7 @@ export default function Layout() {
                 <button
                   onClick={handleLogout}
                   className="flex items-center gap-2 text-dark-400 hover:text-white transition-colors"
+                  aria-label="Sign out"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -239,6 +255,27 @@ export default function Layout() {
           </div>
         </div>
       </header>
+
+      {/* Announcement Banner */}
+      {latestAnnouncement && latestAnnouncement.id !== dismissedAnnouncement && (
+        <div className="bg-primary-500/10 border-b border-primary-500/20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm">
+              <Megaphone className="w-4 h-4 text-primary-400 flex-shrink-0" />
+              <span className="text-primary-300">{latestAnnouncement.title}</span>
+            </div>
+            <button
+              onClick={() => {
+                setDismissedAnnouncement(latestAnnouncement.id);
+                localStorage.setItem('dismissed_announcement', latestAnnouncement.id);
+              }}
+              className="text-xs text-dark-400 hover:text-white transition-colors ml-4"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

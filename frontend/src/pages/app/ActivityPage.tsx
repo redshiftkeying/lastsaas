@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Activity, ChevronLeft, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 import { tenantApi } from '../../api/client';
 import type { ActivityLogEntry } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: 'bg-red-500/20 text-red-400',
@@ -27,7 +29,7 @@ export default function ActivityPage() {
         setLogs(data.logs || []);
         setTotal(data.total);
       })
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, [page]);
 

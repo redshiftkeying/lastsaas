@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { Paintbrush, Upload, X, Check, Plus, Trash2, GripVertical, Eye, EyeOff, FileText, Image, Globe } from 'lucide-react';
+import { toast } from 'sonner';
 import { brandingApi, brandingAdminApi } from '../../api/client';
 import { useBranding } from '../../contexts/BrandingContext';
 import type { BrandingConfig, NavItem, MediaItem, CustomPage } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 type Tab = 'identity' | 'theme' | 'content' | 'pages' | 'media';
 
@@ -30,7 +32,7 @@ export default function BrandingPage() {
   useEffect(() => {
     brandingApi.get()
       .then((data) => setConfig(data))
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -43,7 +45,7 @@ export default function BrandingPage() {
     setMediaLoading(true);
     brandingAdminApi.listMedia()
       .then((data) => setMedia(data.media))
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setMediaLoading(false));
   };
 
@@ -51,7 +53,7 @@ export default function BrandingPage() {
     setPagesLoading(true);
     brandingAdminApi.listPages()
       .then((data) => setPages(data.pages))
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setPagesLoading(false));
   };
 

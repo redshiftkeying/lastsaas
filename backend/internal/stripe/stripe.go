@@ -91,7 +91,10 @@ func (s *Service) GetOrCreateCustomer(ctx context.Context, tenant *models.Tenant
 }
 
 // GetOrCreatePrice finds an existing Stripe price mapping or creates a new Product + Price.
-func (s *Service) GetOrCreatePrice(ctx context.Context, entityType string, entityID primitive.ObjectID, name string, amountCents int64, interval string) (string, error) {
+func (s *Service) GetOrCreatePrice(ctx context.Context, entityType string, entityID primitive.ObjectID, name string, amountCents int64, interval string, currency string) (string, error) {
+	if currency == "" {
+		currency = "usd"
+	}
 	// Check existing mapping
 	var mapping models.StripeMapping
 	err := s.db.StripeMappings().FindOne(ctx, bson.M{
@@ -121,7 +124,7 @@ func (s *Service) GetOrCreatePrice(ctx context.Context, entityType string, entit
 	// Create price
 	priceParams := &stripe.PriceParams{
 		Product:    stripe.String(prod.ID),
-		Currency:   stripe.String("usd"),
+		Currency:   stripe.String(currency),
 		UnitAmount: stripe.Int64(amountCents),
 	}
 	if interval != "" {
@@ -165,6 +168,8 @@ type CheckoutRequest struct {
 	Quantity        int64               // For per-seat plans; defaults to 1
 	SeatQuantity    int64               // Stored in metadata for seat tracking
 	CustomLineItems []CheckoutLineItem  // Override default single line item
+	TrialDays       int                 // Free trial period in days (0 = no trial)
+	Currency        string              // Currency code (e.g. "usd", "eur"); defaults to "usd"
 }
 
 // CreateCheckoutSession creates a Stripe Checkout Session for a subscription or one-time payment.
@@ -209,9 +214,9 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 		var err error
 		if req.PlanID != nil {
 			entityType := "plan_" + req.BillingInterval
-			priceID, err = s.GetOrCreatePrice(ctx, entityType, *req.PlanID, req.PlanName, req.AmountCents, req.BillingInterval)
+			priceID, err = s.GetOrCreatePrice(ctx, entityType, *req.PlanID, req.PlanName, req.AmountCents, req.BillingInterval, req.Currency)
 		} else {
-			priceID, err = s.GetOrCreatePrice(ctx, "bundle", *req.BundleID, req.BundleName, req.AmountCents, "")
+			priceID, err = s.GetOrCreatePrice(ctx, "bundle", *req.BundleID, req.BundleName, req.AmountCents, "", req.Currency)
 		}
 		if err != nil {
 			return "", err
@@ -238,12 +243,19 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 		LineItems:           lineItems,
 	}
 
-	// Copy instance metadata to the subscription so subscription/invoice events can be filtered
-	if mode == "subscription" && s.instanceID != "" {
-		params.SubscriptionData = &stripe.CheckoutSessionSubscriptionDataParams{
-			Metadata: map[string]string{
+	// Subscription-specific settings (trial, instance metadata)
+	if mode == "subscription" {
+		subData := &stripe.CheckoutSessionSubscriptionDataParams{}
+		if s.instanceID != "" {
+			subData.Metadata = map[string]string{
 				"instance": s.instanceID,
-			},
+			}
+		}
+		if req.TrialDays > 0 {
+			subData.TrialPeriodDays = stripe.Int64(int64(req.TrialDays))
+		}
+		if subData.Metadata != nil || req.TrialDays > 0 {
+			params.SubscriptionData = subData
 		}
 	}
 

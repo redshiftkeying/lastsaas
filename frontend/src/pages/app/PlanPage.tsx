@@ -1,19 +1,29 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CreditCard, Check, Minus, Crown, Sparkles, Zap, XCircle, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { plansApi, billingApi } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import { useTenant } from '../../contexts/TenantContext';
 import type { Plan, EntitlementValue, BillingStatus } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
-function formatPrice(cents: number): string {
-  if (cents === 0) return 'Free';
-  return `$${(cents / 100).toFixed(2)}`;
+const currencySymbols: Record<string, string> = {
+  usd: '$', eur: '€', gbp: '£', jpy: '¥', cad: 'CA$', aud: 'A$',
+};
+
+function getCurrencySymbol(currency: string): string {
+  return currencySymbols[currency?.toLowerCase()] || currency?.toUpperCase() + ' ';
 }
 
-function annualPrice(cents: number, discountPct: number): string {
+function formatPrice(cents: number, currency = 'usd'): string {
+  if (cents === 0) return 'Free';
+  return `${getCurrencySymbol(currency)}${(cents / 100).toFixed(2)}`;
+}
+
+function annualPrice(cents: number, discountPct: number, currency = 'usd'): string {
   const monthly = (cents / 100) * (1 - discountPct / 100);
-  return `$${monthly.toFixed(2)}`;
+  return `${getCurrencySymbol(currency)}${monthly.toFixed(2)}`;
 }
 
 function annualTotal(cents: number, discountPct: number): number {
@@ -33,6 +43,7 @@ export default function PlanPage() {
   const [subscriptionCredits, setSubscriptionCredits] = useState(0);
   const [purchasedCredits, setPurchasedCredits] = useState(0);
   const [maxPlanUserLimit, setMaxPlanUserLimit] = useState(0);
+  const [currency, setCurrency] = useState('usd');
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
@@ -60,8 +71,9 @@ export default function PlanPage() {
         setSubscriptionCredits(data.tenantSubscriptionCredits);
         setPurchasedCredits(data.tenantPurchasedCredits);
         setMaxPlanUserLimit(data.maxPlanUserLimit);
+        if (data.currency) setCurrency(data.currency);
       })
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, [activeTenant]);
 
@@ -257,7 +269,7 @@ export default function PlanPage() {
             </div>
             <div className="text-right">
               <div className="text-3xl font-bold text-white">
-                {formatPrice(currentPlan.monthlyPriceCents)}
+                {formatPrice(currentPlan.monthlyPriceCents, currency)}
               </div>
               {currentPlan.monthlyPriceCents > 0 && (
                 <span className="text-dark-400 text-sm">/month</span>
@@ -340,27 +352,34 @@ export default function PlanPage() {
                 {selectedInterval === 'year' && plan.annualDiscountPct > 0 ? (
                   <>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold text-white">{annualPrice(plan.monthlyPriceCents, plan.annualDiscountPct)}</span>
+                      <span className="text-3xl font-bold text-white">{annualPrice(plan.monthlyPriceCents, plan.annualDiscountPct, currency)}</span>
                       <span className="text-dark-400 text-sm">/mo</span>
                     </div>
                     <p className="text-sm text-accent-emerald mt-1">
-                      {formatPrice(displayPrice)}/year ({plan.annualDiscountPct}% off)
+                      {formatPrice(displayPrice, currency)}/year ({plan.annualDiscountPct}% off)
                     </p>
                   </>
                 ) : (
                   <>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold text-white">{formatPrice(plan.monthlyPriceCents)}</span>
+                      <span className="text-3xl font-bold text-white">{formatPrice(plan.monthlyPriceCents, currency)}</span>
                       {plan.monthlyPriceCents > 0 && <span className="text-dark-400 text-sm">/mo</span>}
                     </div>
                     {plan.annualDiscountPct > 0 && (
                       <p className="text-sm text-accent-emerald mt-1">
-                        {annualPrice(plan.monthlyPriceCents, plan.annualDiscountPct)}/mo billed annually ({plan.annualDiscountPct}% off)
+                        {annualPrice(plan.monthlyPriceCents, plan.annualDiscountPct, currency)}/mo billed annually ({plan.annualDiscountPct}% off)
                       </p>
                     )}
                   </>
                 )}
               </div>
+
+              {/* Trial badge */}
+              {plan.trialDays > 0 && !isCurrent && (
+                <div className="mb-4 px-3 py-1.5 bg-accent-emerald/10 border border-accent-emerald/20 rounded-lg text-center">
+                  <span className="text-sm font-medium text-accent-emerald">{plan.trialDays}-day free trial</span>
+                </div>
+              )}
 
               {/* Key features list */}
               <div className="space-y-3 mb-6">
@@ -455,7 +474,7 @@ export default function PlanPage() {
                 <td className="px-6 py-3 text-sm text-dark-300">Monthly Price</td>
                 {sortedPlans.map(plan => (
                   <td key={plan.id} className={`px-6 py-3 text-sm text-center ${plan.id === currentPlanId ? 'text-white font-medium' : 'text-dark-300'}`}>
-                    {formatPrice(plan.monthlyPriceCents)}{plan.monthlyPriceCents > 0 ? '/mo' : ''}
+                    {formatPrice(plan.monthlyPriceCents, currency)}{plan.monthlyPriceCents > 0 ? '/mo' : ''}
                   </td>
                 ))}
               </tr>
@@ -467,7 +486,7 @@ export default function PlanPage() {
                   {sortedPlans.map(plan => (
                     <td key={plan.id} className={`px-6 py-3 text-sm text-center ${plan.id === currentPlanId ? 'text-white font-medium' : 'text-dark-300'}`}>
                       {plan.annualDiscountPct > 0 ? (
-                        <span>{annualPrice(plan.monthlyPriceCents, plan.annualDiscountPct)}/mo <span className="text-accent-emerald text-xs">({plan.annualDiscountPct}% off)</span></span>
+                        <span>{annualPrice(plan.monthlyPriceCents, plan.annualDiscountPct, currency)}/mo <span className="text-accent-emerald text-xs">({plan.annualDiscountPct}% off)</span></span>
                       ) : (
                         <span className="text-dark-500">—</span>
                       )}

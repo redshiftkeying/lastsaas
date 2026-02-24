@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Shield, Check, X, Zap, Hash, ToggleLeft } from 'lucide-react';
+import { toast } from 'sonner';
 import { plansApi } from '../../api/client';
 import { useTenant } from '../../contexts/TenantContext';
 import type { Plan, EntitlementType } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 function renderTemplate(template: string, vars: Record<string, string | number>): string {
   let result = template;
@@ -48,7 +50,7 @@ export default function TestEntitlementsPage() {
         setPromptBody(data.entitlementUpgradePromptBody || '');
         setPromptNumericBody(data.entitlementUpgradePromptNumericBody || '');
       })
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 

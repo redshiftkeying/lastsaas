@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Zap, ShoppingCart } from 'lucide-react';
+import { toast } from 'sonner';
 import { bundlesApi, plansApi, billingApi } from '../../api/client';
 import type { CreditBundle } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -23,7 +25,7 @@ export default function BuyCreditsPage() {
         setBundles(bundleData.bundles);
         setTotalCredits(planData.tenantSubscriptionCredits + planData.tenantPurchasedCredits);
       })
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 

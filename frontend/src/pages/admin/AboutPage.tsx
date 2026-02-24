@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Info } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
 import type { AboutInfo } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 export default function AboutPage() {
   const [about, setAbout] = useState<AboutInfo | null>(null);
@@ -11,7 +13,7 @@ export default function AboutPage() {
   useEffect(() => {
     adminApi.getAbout()
       .then(setAbout)
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 

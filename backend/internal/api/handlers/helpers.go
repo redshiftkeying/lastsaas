@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"regexp"
 )
 
 type ErrorResponse struct {
@@ -25,4 +26,10 @@ func generateRandomToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
+}
+
+var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
+func isValidEmail(email string) bool {
+	return emailRegex.MatchString(email)
 }

@@ -123,8 +123,17 @@ func (d *Dispatcher) dispatch(eventType models.WebhookEventType, event events.Ev
 	}
 }
 
-// deliver sends a single webhook and records the delivery.
+const maxWebhookRetries = 3
+
+// retryDelays defines exponential backoff delays for webhook retries.
+var retryDelays = [maxWebhookRetries]time.Duration{1 * time.Minute, 5 * time.Minute, 30 * time.Minute}
+
+// deliver sends a single webhook and records the delivery. Schedules retries on failure.
 func (d *Dispatcher) deliver(ctx context.Context, hook models.Webhook, eventType models.WebhookEventType, event events.Event) {
+	d.deliverWithRetry(ctx, hook, eventType, event, 0)
+}
+
+func (d *Dispatcher) deliverWithRetry(ctx context.Context, hook models.Webhook, eventType models.WebhookEventType, event events.Event, retryCount int) {
 	payload := map[string]interface{}{
 		"event":     string(eventType),
 		"timestamp": event.Timestamp.UTC().Format(time.RFC3339),
@@ -132,7 +141,10 @@ func (d *Dispatcher) deliver(ctx context.Context, hook models.Webhook, eventType
 	}
 	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", hook.URL, bytes.NewReader(body))
+	deliverCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(deliverCtx, "POST", hook.URL, bytes.NewReader(body))
 	if err != nil {
 		log.Printf("webhooks: failed to create request for %s: %v", hook.Name, err)
 		return
@@ -152,12 +164,14 @@ func (d *Dispatcher) deliver(ctx context.Context, hook models.Webhook, eventType
 	duration := time.Since(start).Milliseconds()
 
 	delivery := models.WebhookDelivery{
-		ID:        primitive.NewObjectID(),
-		WebhookID: hook.ID,
-		EventType: eventType,
-		Payload:   string(body),
-		Duration:  duration,
-		CreatedAt: time.Now(),
+		ID:         primitive.NewObjectID(),
+		WebhookID:  hook.ID,
+		EventType:  eventType,
+		Payload:    string(body),
+		Duration:   duration,
+		RetryCount: retryCount,
+		MaxRetries: maxWebhookRetries,
+		CreatedAt:  time.Now(),
 	}
 
 	if err != nil {
@@ -174,12 +188,18 @@ func (d *Dispatcher) deliver(ctx context.Context, hook models.Webhook, eventType
 		delivery.Success = resp.StatusCode >= 200 && resp.StatusCode < 300
 	}
 
-	if _, err := d.db.WebhookDeliveries().InsertOne(ctx, delivery); err != nil {
+	if _, err := d.db.WebhookDeliveries().InsertOne(deliverCtx, delivery); err != nil {
 		log.Printf("webhooks: failed to record delivery for %s: %v", hook.Name, err)
 	}
 
 	if !delivery.Success {
-		log.Printf("webhooks: delivery to %s failed (status: %d)", hook.Name, delivery.ResponseCode)
+		log.Printf("webhooks: delivery to %s failed (status: %d, retry: %d/%d)", hook.Name, delivery.ResponseCode, retryCount, maxWebhookRetries)
+		if retryCount < maxWebhookRetries {
+			delay := retryDelays[retryCount]
+			time.AfterFunc(delay, func() {
+				d.deliverWithRetry(context.Background(), hook, eventType, event, retryCount+1)
+			})
+		}
 	}
 }
 

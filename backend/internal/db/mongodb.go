@@ -261,6 +261,13 @@ func (m *MongoDB) ensureIndexes() {
 				{Keys: bson.D{{Key: "tenantId", Value: 1}}, Options: options.Index().SetUnique(true)},
 			},
 		},
+		{
+			"usage_events",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "tenantId", Value: 1}, {Key: "type", Value: 1}, {Key: "createdAt", Value: -1}}},
+			},
+		},
 	}
 
 	for _, idx := range indexes {
@@ -404,4 +411,12 @@ func (m *MongoDB) WebAuthnSessions() *mongo.Collection {
 
 func (m *MongoDB) SSOConnections() *mongo.Collection {
 	return m.Database.Collection("sso_connections")
+}
+
+func (m *MongoDB) Announcements() *mongo.Collection {
+	return m.Database.Collection("announcements")
+}
+
+func (m *MongoDB) UsageEvents() *mongo.Collection {
+	return m.Database.Collection("usage_events")
 }

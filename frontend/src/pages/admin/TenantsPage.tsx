@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, Shield, Zap, Search, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import type { TenantListItem } from '../../types';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import TableSkeleton from '../../components/TableSkeleton';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const PAGE_SIZE = 25;
 
@@ -17,6 +20,8 @@ export default function TenantsPage() {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const [sort, setSort] = useState(searchParams.get('sort') || '-createdAt');
+  const [statusTarget, setStatusTarget] = useState<TenantListItem | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchTenants = useCallback(async (p: number, q: string, s: string) => {
@@ -25,8 +30,8 @@ export default function TenantsPage() {
       const data = await adminApi.listTenants({ page: p, limit: PAGE_SIZE, search: q || undefined, sort: s });
       setTenants(data.tenants || []);
       setTotal(data.total);
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -63,11 +68,16 @@ export default function TenantsPage() {
 
   const toggleStatus = async (tenant: TenantListItem) => {
     if (tenant.isRoot) return;
+    setStatusLoading(true);
     try {
       await adminApi.updateTenantStatus(tenant.id, !tenant.isActive);
       setTenants(prev => prev.map(t => t.id === tenant.id ? { ...t, isActive: !t.isActive } : t));
-    } catch {
-      // ignore
+      toast.success(`${tenant.name} ${tenant.isActive ? 'disabled' : 'enabled'}`);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setStatusLoading(false);
+      setStatusTarget(null);
     }
   };
 
@@ -102,7 +112,7 @@ export default function TenantsPage() {
       {/* Table */}
       <div className="bg-dark-900/50 backdrop-blur-sm border border-dark-800 rounded-2xl overflow-hidden">
         {loading && tenants.length === 0 ? (
-          <div className="py-20"><LoadingSpinner size="lg" /></div>
+          <TableSkeleton rows={8} cols={7} />
         ) : tenants.length === 0 ? (
           <div className="py-16 text-center text-dark-400">
             {search ? 'No tenants match your search.' : 'No tenants yet.'}
@@ -174,7 +184,7 @@ export default function TenantsPage() {
                       <td className="px-6 py-3.5 text-right">
                         {!tenant.isRoot && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); toggleStatus(tenant); }}
+                            onClick={(e) => { e.stopPropagation(); setStatusTarget(tenant); }}
                             className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                               tenant.isActive
                                 ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
@@ -243,6 +253,17 @@ export default function TenantsPage() {
           </>
         )}
       </div>
+
+      <ConfirmModal
+        open={statusTarget !== null}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={() => statusTarget && toggleStatus(statusTarget)}
+        title={statusTarget?.isActive ? 'Disable Tenant' : 'Enable Tenant'}
+        message={`Are you sure you want to ${statusTarget?.isActive ? 'disable' : 'enable'} ${statusTarget?.name}? ${statusTarget?.isActive ? 'All members will lose access.' : ''}`}
+        confirmLabel={statusTarget?.isActive ? 'Disable' : 'Enable'}
+        confirmVariant={statusTarget?.isActive ? 'danger' : 'primary'}
+        loading={statusLoading}
+      />
     </div>
   );
 }

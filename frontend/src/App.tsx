@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'sonner';
 import { AuthProvider } from './contexts/AuthContext';
 import { TenantProvider } from './contexts/TenantContext';
 import { BrandingProvider } from './contexts/BrandingContext';
@@ -12,7 +13,7 @@ import BrandingThemeInjector from './components/BrandingThemeInjector';
 import LoadingSpinner from './components/LoadingSpinner';
 import { bootstrapApi } from './api/client';
 
-// Auth pages
+// Auth pages (eager — small, always needed)
 import LoginPage from './pages/auth/LoginPage';
 import SignupPage from './pages/auth/SignupPage';
 import VerifyEmailPage from './pages/auth/VerifyEmailPage';
@@ -23,7 +24,7 @@ import MFAChallengePage from './pages/auth/MFAChallengePage';
 import MagicLinkVerifyPage from './pages/auth/MagicLinkVerifyPage';
 import BootstrapPage from './pages/BootstrapPage';
 
-// App pages
+// App pages (eager — core experience)
 import DashboardPage from './pages/app/DashboardPage';
 import TeamPage from './pages/app/TeamPage';
 import SettingsPage from './pages/app/SettingsPage';
@@ -35,25 +36,35 @@ import TestEntitlementsPage from './pages/app/TestEntitlementsPage';
 import ActivityPage from './pages/app/ActivityPage';
 import OnboardingPage from './pages/app/OnboardingPage';
 
-// Admin pages
-import AdminDashboardPage from './pages/admin/DashboardPage';
-import AdminMessagesPage from './pages/admin/MessagesPage';
-import AdminUsersPage from './pages/admin/UsersPage';
-import AdminTenantsPage from './pages/admin/TenantsPage';
-import AdminLogsPage from './pages/admin/LogsPage';
-import AdminConfigPage from './pages/admin/ConfigPage';
-import AdminUserProfilePage from './pages/admin/UserProfilePage';
-import AdminAboutPage from './pages/admin/AboutPage';
-import AdminPlansPage from './pages/admin/PlansPage';
-import AdminTenantProfilePage from './pages/admin/TenantProfilePage';
-import AdminHealthPage from './pages/admin/HealthPage';
-import AdminFinancialPage from './pages/admin/FinancialPage';
-import AdminAPIPage from './pages/admin/APIPage';
-import AdminBrandingPage from './pages/admin/BrandingPage';
+// Admin pages (lazy — only loaded by root tenant admins)
+const AdminDashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
+const AdminMessagesPage = lazy(() => import('./pages/admin/MessagesPage'));
+const AdminUsersPage = lazy(() => import('./pages/admin/UsersPage'));
+const AdminTenantsPage = lazy(() => import('./pages/admin/TenantsPage'));
+const AdminLogsPage = lazy(() => import('./pages/admin/LogsPage'));
+const AdminConfigPage = lazy(() => import('./pages/admin/ConfigPage'));
+const AdminUserProfilePage = lazy(() => import('./pages/admin/UserProfilePage'));
+const AdminAboutPage = lazy(() => import('./pages/admin/AboutPage'));
+const AdminPlansPage = lazy(() => import('./pages/admin/PlansPage'));
+const AdminTenantProfilePage = lazy(() => import('./pages/admin/TenantProfilePage'));
+const AdminHealthPage = lazy(() => import('./pages/admin/HealthPage'));
+const AdminFinancialPage = lazy(() => import('./pages/admin/FinancialPage'));
+const AdminAPIPage = lazy(() => import('./pages/admin/APIPage'));
+const AdminBrandingPage = lazy(() => import('./pages/admin/BrandingPage'));
+const AdminPromotionsPage = lazy(() => import('./pages/admin/PromotionsPage'));
+const AdminAnnouncementsPage = lazy(() => import('./pages/admin/AnnouncementsPage'));
 
 // Public pages
 import LandingPage from './pages/public/LandingPage';
 import CustomPage from './pages/public/CustomPage';
+
+function LazyFallback() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <LoadingSpinner size="lg" />
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -146,31 +157,43 @@ export default function App() {
                         <Route path="/settings" element={<SettingsPage />} />
                         <Route path="/activity" element={<ActivityPage />} />
                         <Route path="/test-entitlements" element={<TestEntitlementsPage />} />
-                        <Route path="/messages" element={<AdminMessagesPage />} />
+                        <Route path="/messages" element={<Suspense fallback={<LazyFallback />}><AdminMessagesPage /></Suspense>} />
                       </Route>
 
                       {/* Admin routes (root tenant only, enforced by AdminLayout) */}
                       <Route path="/last" element={<AdminLayout />}>
-                        <Route index element={<AdminDashboardPage />} />
-                        <Route path="messages" element={<AdminMessagesPage />} />
-                        <Route path="users" element={<AdminUsersPage />} />
-                        <Route path="users/:userId" element={<AdminUserProfilePage />} />
-                        <Route path="tenants" element={<AdminTenantsPage />} />
-                        <Route path="tenants/:tenantId" element={<AdminTenantProfilePage />} />
-                        <Route path="plans" element={<AdminPlansPage />} />
-                        <Route path="financial" element={<AdminFinancialPage />} />
-                        <Route path="health" element={<AdminHealthPage />} />
-                        <Route path="logs" element={<AdminLogsPage />} />
-                        <Route path="config" element={<AdminConfigPage />} />
-                        <Route path="api" element={<AdminAPIPage />} />
-                        <Route path="branding" element={<AdminBrandingPage />} />
-                        <Route path="about" element={<AdminAboutPage />} />
+                        <Route index element={<Suspense fallback={<LazyFallback />}><AdminDashboardPage /></Suspense>} />
+                        <Route path="messages" element={<Suspense fallback={<LazyFallback />}><AdminMessagesPage /></Suspense>} />
+                        <Route path="users" element={<Suspense fallback={<LazyFallback />}><AdminUsersPage /></Suspense>} />
+                        <Route path="users/:userId" element={<Suspense fallback={<LazyFallback />}><AdminUserProfilePage /></Suspense>} />
+                        <Route path="tenants" element={<Suspense fallback={<LazyFallback />}><AdminTenantsPage /></Suspense>} />
+                        <Route path="tenants/:tenantId" element={<Suspense fallback={<LazyFallback />}><AdminTenantProfilePage /></Suspense>} />
+                        <Route path="plans" element={<Suspense fallback={<LazyFallback />}><AdminPlansPage /></Suspense>} />
+                        <Route path="financial" element={<Suspense fallback={<LazyFallback />}><AdminFinancialPage /></Suspense>} />
+                        <Route path="promotions" element={<Suspense fallback={<LazyFallback />}><AdminPromotionsPage /></Suspense>} />
+                        <Route path="announcements" element={<Suspense fallback={<LazyFallback />}><AdminAnnouncementsPage /></Suspense>} />
+                        <Route path="health" element={<Suspense fallback={<LazyFallback />}><AdminHealthPage /></Suspense>} />
+                        <Route path="logs" element={<Suspense fallback={<LazyFallback />}><AdminLogsPage /></Suspense>} />
+                        <Route path="config" element={<Suspense fallback={<LazyFallback />}><AdminConfigPage /></Suspense>} />
+                        <Route path="api" element={<Suspense fallback={<LazyFallback />}><AdminAPIPage /></Suspense>} />
+                        <Route path="branding" element={<Suspense fallback={<LazyFallback />}><AdminBrandingPage /></Suspense>} />
+                        <Route path="about" element={<Suspense fallback={<LazyFallback />}><AdminAboutPage /></Suspense>} />
                       </Route>
                     </Route>
 
                     {/* Fallback */}
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
+                  <Toaster
+                    position="top-right"
+                    toastOptions={{
+                      style: {
+                        background: 'var(--color-dark-900)',
+                        border: '1px solid var(--color-dark-700)',
+                        color: 'var(--color-dark-100)',
+                      },
+                    }}
+                  />
                 </BrowserRouter>
               </TenantProvider>
             </ThemeProvider>

@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, UserPlus, Trash2, Crown, ShieldCheck, User, Zap } from 'lucide-react';
+import { toast } from 'sonner';
 import { tenantApi, plansApi } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../contexts/TenantContext';
 import type { TenantMember, Plan } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const roleIcons = { owner: Crown, admin: ShieldCheck, user: User };
 
@@ -40,13 +43,16 @@ export default function TeamPage() {
   const [currentPlanId, setCurrentPlanId] = useState('');
   const [plans, setPlans] = useState<Plan[]>([]);
 
+  const [removeMember, setRemoveMember] = useState<TenantMember | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
+
   const canManage = myRole === 'owner' || myRole === 'admin';
   const isOwner = myRole === 'owner';
 
   const fetchMembers = () => {
     tenantApi.listMembers()
       .then((data) => setMembers(data.members))
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   };
 
@@ -61,7 +67,7 @@ export default function TeamPage() {
         setUpgradePromptTitle(data.upgradePromptTitle);
         setUpgradePromptBody(data.upgradePromptBody);
       })
-      .catch(() => {});
+      .catch(err => toast.error(getErrorMessage(err)));
   }, []);
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -87,13 +93,16 @@ export default function TeamPage() {
   };
 
   const handleRemove = async (member: TenantMember) => {
-    if (member.userId === user?.id) return;
-    if (!confirm(`Remove ${member.displayName} from the team?`)) return;
+    setRemoveLoading(true);
     try {
       await tenantApi.removeMember(member.userId);
       setMembers(members.filter(m => m.userId !== member.userId));
-    } catch {
-      // ignore
+      toast.success(`${member.displayName} removed from team`);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRemoveLoading(false);
+      setRemoveMember(null);
     }
   };
 
@@ -101,8 +110,9 @@ export default function TeamPage() {
     try {
       await tenantApi.changeRole(member.userId, newRole);
       setMembers(members.map(m => m.userId === member.userId ? { ...m, role: newRole as TenantMember['role'] } : m));
-    } catch {
-      // ignore
+      toast.success(`${member.displayName}'s role changed to ${newRole}`);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -223,7 +233,7 @@ export default function TeamPage() {
                     <td className="px-6 py-4 text-right">
                       {!isMe && member.role !== 'owner' && (
                         <button
-                          onClick={() => handleRemove(member)}
+                          onClick={() => setRemoveMember(member)}
                           className="text-dark-500 hover:text-red-400 transition-colors p-1"
                           title="Remove member"
                         >
@@ -280,6 +290,17 @@ export default function TeamPage() {
           </div>
         );
       })()}
+
+      <ConfirmModal
+        open={removeMember !== null}
+        onClose={() => setRemoveMember(null)}
+        onConfirm={() => removeMember && handleRemove(removeMember)}
+        title="Remove Team Member"
+        message={`Are you sure you want to remove ${removeMember?.displayName} from the team?`}
+        confirmLabel="Remove"
+        confirmVariant="danger"
+        loading={removeLoading}
+      />
     </div>
   );
 }

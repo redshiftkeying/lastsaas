@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import { useBranding } from '../../contexts/BrandingContext';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -43,7 +44,7 @@ export default function LandingPage() {
   return (
     <div
       className="min-h-screen bg-dark-950"
-      dangerouslySetInnerHTML={{ __html: branding.landingHtml }}
+      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(branding.landingHtml) }}
     />
   );
 }

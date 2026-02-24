@@ -192,7 +192,7 @@ func main() {
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(jwtService, database)
 	tenantMiddleware := middleware.NewTenantMiddleware(database)
-	rateLimiter := middleware.NewRateLimiter()
+	rateLimiter := middleware.NewDistributedRateLimiter(database.Database)
 	defer rateLimiter.Stop()
 	metricsCollector := middleware.NewMetricsCollector()
 
@@ -244,6 +244,7 @@ func main() {
 	bootstrapHandler := handlers.NewBootstrapHandler(database)
 	authHandler := handlers.NewAuthHandler(database, jwtService, passwordService, googleOAuth, emailService, emitter, cfg.Frontend.URL, sysLogger)
 	authHandler.SetGetConfig(cfgStore.Get)
+	authHandler.SetRateLimiter(rateLimiter)
 	if githubOAuth != nil {
 		authHandler.SetGitHubOAuth(githubOAuth)
 	}
@@ -264,10 +265,13 @@ func main() {
 	bundlesHandler := handlers.NewBundlesHandler(database, sysLogger)
 	healthHandler := handlers.NewHealthHandler(healthService)
 	billingHandler := handlers.NewBillingHandler(stripeSvc, database, emitter, sysLogger, cfgStore)
+	promotionsHandler := handlers.NewPromotionsHandler()
 	webhookHandler := handlers.NewWebhookHandler(stripeSvc, database, emitter, sysLogger, cfgStore.Get)
 	apiKeysHandler := handlers.NewAPIKeysHandler(database, emitter, sysLogger)
 	webhooksHandler := handlers.NewWebhooksHandler(database, sysLogger, webhookDispatcher)
 	brandingHandler := handlers.NewBrandingHandler(database, cfgStore, sysLogger)
+	announcementsHandler := handlers.NewAnnouncementsHandler(database, sysLogger)
+	usageHandler := handlers.NewUsageHandler(database)
 	brandingHandler.SetAuthProviders(map[string]bool{
 		"google":    googleOAuth != nil,
 		"github":    githubOAuth != nil,
@@ -412,6 +416,8 @@ func main() {
 	protectedAuth.HandleFunc("/sessions", authHandler.RevokeAllSessions).Methods("DELETE")
 	protectedAuth.HandleFunc("/preferences", authHandler.UpdatePreferences).Methods("PATCH")
 	protectedAuth.HandleFunc("/complete-onboarding", authHandler.CompleteOnboarding).Methods("POST")
+	protectedAuth.HandleFunc("/delete-account", authHandler.DeleteAccount).Methods("POST")
+	protectedAuth.HandleFunc("/export-data", authHandler.ExportData).Methods("GET")
 
 	// Tenant-scoped routes (require JWT + tenant context)
 	tenantAPI := guarded.PathPrefix("/tenant").Subrouter()
@@ -459,6 +465,16 @@ func main() {
 	// Public credit bundles route (require JWT, not admin)
 	guarded.Handle("/credit-bundles", authMiddleware.RequireAuth(http.HandlerFunc(bundlesHandler.ListBundlesPublic))).Methods("GET")
 
+	// Public announcements route (require JWT)
+	guarded.Handle("/announcements", authMiddleware.RequireAuth(http.HandlerFunc(announcementsHandler.ListPublic))).Methods("GET")
+
+	// Usage metering routes (require JWT + tenant)
+	usageAPI := guarded.PathPrefix("/usage").Subrouter()
+	usageAPI.Use(authMiddleware.RequireAuth)
+	usageAPI.Use(tenantMiddleware.RequireTenant)
+	usageAPI.HandleFunc("/record", usageHandler.RecordUsage).Methods("POST")
+	usageAPI.HandleFunc("/summary", usageHandler.GetSummary).Methods("GET")
+
 	// Webhook route (no auth — uses Stripe signature verification)
 	api.HandleFunc("/billing/webhook", webhookHandler.HandleWebhook).Methods("POST")
 
@@ -499,6 +515,8 @@ func main() {
 	adminAPI.HandleFunc("/health/metrics", healthHandler.GetMetrics).Methods("GET")
 	adminAPI.HandleFunc("/health/current", healthHandler.GetCurrent).Methods("GET")
 	adminAPI.HandleFunc("/health/integrations", healthHandler.GetIntegrations).Methods("GET")
+	adminAPI.HandleFunc("/promotions", promotionsHandler.ListPromotions).Methods("GET")
+	adminAPI.HandleFunc("/announcements", announcementsHandler.ListAll).Methods("GET")
 	adminAPI.HandleFunc("/financial/transactions", billingHandler.AdminListTransactions).Methods("GET")
 	adminAPI.HandleFunc("/financial/metrics", billingHandler.AdminGetMetrics).Methods("GET")
 	adminAPI.HandleFunc("/api-keys", apiKeysHandler.ListAPIKeys).Methods("GET")
@@ -535,6 +553,11 @@ func main() {
 	adminOwner.HandleFunc("/credit-bundles", bundlesHandler.CreateBundle).Methods("POST")
 	adminOwner.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.UpdateBundle).Methods("PUT")
 	adminOwner.HandleFunc("/credit-bundles/{bundleId}", bundlesHandler.DeleteBundle).Methods("DELETE")
+	adminOwner.HandleFunc("/promotions", promotionsHandler.CreatePromotion).Methods("POST")
+	adminOwner.HandleFunc("/promotions/deactivate", promotionsHandler.DeactivatePromotion).Methods("POST")
+	adminOwner.HandleFunc("/announcements", announcementsHandler.Create).Methods("POST")
+	adminOwner.HandleFunc("/announcements/{id}", announcementsHandler.Update).Methods("PUT")
+	adminOwner.HandleFunc("/announcements/{id}", announcementsHandler.Delete).Methods("DELETE")
 	adminOwner.HandleFunc("/tenants/{tenantId}/cancel-subscription", billingHandler.AdminCancelSubscription).Methods("POST")
 	adminOwner.HandleFunc("/tenants/{tenantId}/subscription", billingHandler.AdminUpdateSubscription).Methods("PATCH")
 	adminOwner.HandleFunc("/branding", brandingHandler.UpdateBranding).Methods("PUT")

@@ -37,6 +37,7 @@ type AuthHandler struct {
 	frontendURL     string
 	syslog          *syslog.Logger
 	getConfig       func(string) string
+	rateLimiter     *middleware.RateLimiter
 }
 
 func NewAuthHandler(
@@ -65,6 +66,7 @@ func NewAuthHandler(
 func (h *AuthHandler) SetGitHubOAuth(svc *auth.GitHubOAuthService)       { h.githubOAuth = svc }
 func (h *AuthHandler) SetMicrosoftOAuth(svc *auth.MicrosoftOAuthService) { h.microsoftOAuth = svc }
 func (h *AuthHandler) SetGetConfig(fn func(string) string)               { h.getConfig = fn }
+func (h *AuthHandler) SetRateLimiter(rl *middleware.RateLimiter)          { h.rateLimiter = rl }
 
 // --- Request/Response types ---
 
@@ -158,6 +160,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if req.Email == "" || req.Password == "" || req.DisplayName == "" {
 		respondWithError(w, http.StatusBadRequest, "Email, password, and display name are required")
+		return
+	}
+
+	if !isValidEmail(req.Email) {
+		respondWithError(w, http.StatusBadRequest, "Invalid email format")
 		return
 	}
 
@@ -272,13 +279,28 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.passwordService.ComparePassword(user.PasswordHash, req.Password); err != nil {
-		// Increment failed attempts
-		update := bson.M{"$inc": bson.M{"failedLoginAttempts": 1}}
-		if user.FailedLoginAttempts+1 >= 5 {
-			lockUntil := time.Now().Add(15 * time.Minute)
-			update["$set"] = bson.M{"accountLockedUntil": lockUntil}
+		// Atomic increment of failed attempts + conditional lock
+		now := time.Now()
+		filter := bson.M{
+			"_id": user.ID,
+			"$or": []bson.M{
+				{"accountLockedUntil": nil},
+				{"accountLockedUntil": bson.M{"$lt": now}},
+			},
 		}
-		h.db.Users().UpdateOne(r.Context(), bson.M{"_id": user.ID}, update)
+		var updated models.User
+		err := h.db.Users().FindOneAndUpdate(
+			r.Context(),
+			filter,
+			bson.M{"$inc": bson.M{"failedLoginAttempts": 1}},
+			options.FindOneAndUpdate().SetReturnDocument(options.After),
+		).Decode(&updated)
+		if err == nil && updated.FailedLoginAttempts >= 5 {
+			lockUntil := now.Add(15 * time.Minute)
+			h.db.Users().UpdateOne(r.Context(), bson.M{"_id": user.ID}, bson.M{
+				"$set": bson.M{"accountLockedUntil": lockUntil},
+			})
+		}
 		respondWithError(w, http.StatusUnauthorized, "Invalid email or password")
 		return
 	}
@@ -533,6 +555,14 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+
+	// Email-based rate limiting (in addition to IP-based rate limiting on the route)
+	if h.rateLimiter != nil {
+		if allowed, _, _ := h.rateLimiter.Allow("email:pwreset:"+req.Email, middleware.EmailPasswordResetLimit); !allowed {
+			respondWithJSON(w, http.StatusOK, map[string]string{"message": "If the email exists, a password reset link has been sent"})
+			return
+		}
+	}
 
 	defer respondWithJSON(w, http.StatusOK, map[string]string{"message": "If the email exists, a password reset link has been sent"})
 
@@ -974,6 +1004,14 @@ func (h *AuthHandler) MagicLinkRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+
+	// Email-based rate limiting
+	if h.rateLimiter != nil {
+		if allowed, _, _ := h.rateLimiter.Allow("email:magiclink:"+req.Email, middleware.EmailMagicLinkLimit); !allowed {
+			respondWithJSON(w, http.StatusOK, map[string]string{"message": "If the email exists, a sign-in link has been sent"})
+			return
+		}
+	}
 
 	// Always return success to prevent enumeration
 	defer respondWithJSON(w, http.StatusOK, map[string]string{"message": "If the email exists, a sign-in link has been sent"})
@@ -1835,6 +1873,186 @@ func storeRefreshToken(r *http.Request, database *db.MongoDB, userID primitive.O
 		IsRevoked:    false,
 	}
 	database.RefreshTokens().InsertOne(r.Context(), rt)
+}
+
+// DeleteAccount allows users to delete their own account after password confirmation.
+func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.GetUserFromContext(r.Context())
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Verify password if user has password auth
+	if user.HasAuthMethod(models.AuthMethodPassword) {
+		if req.Password == "" {
+			respondWithError(w, http.StatusBadRequest, "Password is required to confirm account deletion")
+			return
+		}
+		if err := h.passwordService.ComparePassword(user.PasswordHash, req.Password); err != nil {
+			respondWithError(w, http.StatusUnauthorized, "Incorrect password")
+			return
+		}
+	}
+
+	ctx := r.Context()
+
+	// Check ownership of tenants
+	cursor, err := h.db.TenantMemberships().Find(ctx, bson.M{"userId": user.ID})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to check memberships")
+		return
+	}
+	var memberships []models.TenantMembership
+	cursor.All(ctx, &memberships)
+	cursor.Close(ctx)
+
+	for _, m := range memberships {
+		if m.Role != models.RoleOwner {
+			continue
+		}
+
+		var tenant models.Tenant
+		if err := h.db.Tenants().FindOne(ctx, bson.M{"_id": m.TenantID}).Decode(&tenant); err != nil {
+			continue
+		}
+
+		if tenant.IsRoot {
+			respondWithError(w, http.StatusForbidden, "Cannot delete the root tenant owner account. Transfer ownership first.")
+			return
+		}
+
+		otherCount, _ := h.db.TenantMemberships().CountDocuments(ctx, bson.M{
+			"tenantId": m.TenantID,
+			"userId":   bson.M{"$ne": user.ID},
+		})
+		if otherCount > 0 {
+			respondWithError(w, http.StatusBadRequest, fmt.Sprintf("You are the owner of '%s' which has other members. Transfer ownership before deleting your account.", tenant.Name))
+			return
+		}
+
+		// Sole member — delete the tenant
+		h.db.TenantMemberships().DeleteMany(ctx, bson.M{"tenantId": m.TenantID})
+		h.db.Tenants().DeleteOne(ctx, bson.M{"_id": m.TenantID})
+		h.db.Invitations().DeleteMany(ctx, bson.M{"tenantId": m.TenantID})
+
+		h.events.Emit(events.Event{
+			Type:      events.EventTenantDeleted,
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"tenantId":   m.TenantID.Hex(),
+				"tenantName": tenant.Name,
+				"reason":     "owner_self_deleted",
+			},
+		})
+	}
+
+	// Delete user data
+	h.db.TenantMemberships().DeleteMany(ctx, bson.M{"userId": user.ID})
+	h.db.RefreshTokens().DeleteMany(ctx, bson.M{"userId": user.ID})
+	h.db.Messages().DeleteMany(ctx, bson.M{"userId": user.ID})
+	h.db.Users().DeleteOne(ctx, bson.M{"_id": user.ID})
+
+	h.syslog.High(ctx, fmt.Sprintf("User self-deleted account: %s (%s)", user.Email, user.ID.Hex()))
+
+	h.events.Emit(events.Event{
+		Type:      events.EventUserDeleted,
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"userId": user.ID.Hex(),
+			"email":  user.Email,
+			"reason": "self_delete",
+		},
+	})
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Account deleted"})
+}
+
+// ExportData returns a JSON dump of the user's data for GDPR compliance.
+func (h *AuthHandler) ExportData(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.GetUserFromContext(r.Context())
+	if !ok {
+		respondWithError(w, http.StatusUnauthorized, "Not authenticated")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Gather memberships
+	cursor, _ := h.db.TenantMemberships().Find(ctx, bson.M{"userId": user.ID})
+	var memberships []models.TenantMembership
+	if cursor != nil {
+		cursor.All(ctx, &memberships)
+		cursor.Close(ctx)
+	}
+
+	type exportMembership struct {
+		TenantID string `json:"tenantId"`
+		Role     string `json:"role"`
+		JoinedAt string `json:"joinedAt"`
+	}
+	var exportMemberships []exportMembership
+	for _, m := range memberships {
+		exportMemberships = append(exportMemberships, exportMembership{
+			TenantID: m.TenantID.Hex(),
+			Role:     string(m.Role),
+			JoinedAt: m.JoinedAt.Format(time.RFC3339),
+		})
+	}
+
+	// Gather messages
+	msgCursor, _ := h.db.Messages().Find(ctx, bson.M{"userId": user.ID})
+	var messages []models.Message
+	if msgCursor != nil {
+		msgCursor.All(ctx, &messages)
+		msgCursor.Close(ctx)
+	}
+
+	type exportMessage struct {
+		Subject   string `json:"subject"`
+		Body      string `json:"body"`
+		IsSystem  bool   `json:"isSystem"`
+		Read      bool   `json:"read"`
+		CreatedAt string `json:"createdAt"`
+	}
+	var exportMessages []exportMessage
+	for _, m := range messages {
+		exportMessages = append(exportMessages, exportMessage{
+			Subject:   m.Subject,
+			Body:      m.Body,
+			IsSystem:  m.IsSystem,
+			Read:      m.Read,
+			CreatedAt: m.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	export := map[string]interface{}{
+		"profile": map[string]interface{}{
+			"id":            user.ID.Hex(),
+			"email":         user.Email,
+			"displayName":   user.DisplayName,
+			"emailVerified": user.EmailVerified,
+			"authMethods":   user.AuthMethods,
+			"createdAt":     user.CreatedAt.Format(time.RFC3339),
+			"updatedAt":     user.UpdatedAt.Format(time.RFC3339),
+		},
+		"memberships": exportMemberships,
+		"messages":    exportMessages,
+		"exportedAt":  time.Now().Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=account-data.json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(export)
 }
 
 func hashToken(raw string) string {

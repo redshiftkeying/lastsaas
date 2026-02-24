@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, MFARequiredResponse, AuthProviders, ActiveSession, ActivityLogEntry, PasskeyCredential, ImpersonationResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage } from '../types';
+import type { AuthResponse, MFARequiredResponse, AuthProviders, ActiveSession, ActivityLogEntry, PasskeyCredential, ImpersonationResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage, Promotion, Announcement, UsageSummary } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -129,6 +129,12 @@ export const authApi = {
   // Onboarding
   completeOnboarding: () =>
     api.post('/auth/complete-onboarding').then(r => r.data),
+
+  // Account management
+  deleteAccount: (password: string) =>
+    api.post('/auth/delete-account', { password }).then(r => r.data),
+  exportData: () =>
+    api.get('/auth/export-data', { responseType: 'blob' }).then(r => r.data),
 };
 
 // --- Tenant ---
@@ -246,6 +252,24 @@ export const adminApi = {
   adminUpdateSubscription: (tenantId: string, data: { currentPeriodEnd?: string }) =>
     api.patch(`/admin/tenants/${tenantId}/subscription`, data).then(r => r.data),
 
+  // Promotions
+  listPromotions: () =>
+    api.get<{ promotions: Promotion[] }>('/admin/promotions').then(r => r.data),
+  createPromotion: (data: { code: string; name?: string; percentOff?: number; amountOff?: number; currency?: string; maxRedemptions?: number }) =>
+    api.post<{ id: string; code: string }>('/admin/promotions', data).then(r => r.data),
+  deactivatePromotion: (id: string) =>
+    api.post('/admin/promotions/deactivate', { id }).then(r => r.data),
+
+  // Announcements
+  listAnnouncements: () =>
+    api.get<{ announcements: Announcement[] }>('/admin/announcements').then(r => r.data),
+  createAnnouncement: (data: { title: string; body: string; publish: boolean }) =>
+    api.post<Announcement>('/admin/announcements', data).then(r => r.data),
+  updateAnnouncement: (id: string, data: { title?: string; body?: string; publish?: boolean }) =>
+    api.put(`/admin/announcements/${id}`, data).then(r => r.data),
+  deleteAnnouncement: (id: string) =>
+    api.delete(`/admin/announcements/${id}`).then(r => r.data),
+
   // API Keys
   listAPIKeys: () =>
     api.get<{ apiKeys: APIKey[] }>('/admin/api-keys').then(r => r.data),
@@ -287,6 +311,20 @@ export const plansApi = {
 export const bundlesApi = {
   list: () =>
     api.get<{ bundles: CreditBundle[] }>('/credit-bundles').then(r => r.data),
+};
+
+// --- Announcements (public, authenticated) ---
+export const announcementsApi = {
+  list: () =>
+    api.get<{ announcements: Announcement[] }>('/announcements').then(r => r.data),
+};
+
+// --- Usage Metering ---
+export const usageApi = {
+  record: (data: { type: string; quantity: number; metadata?: Record<string, unknown> }) =>
+    api.post<{ id: string; type: string; quantity: number }>('/usage/record', data).then(r => r.data),
+  summary: () =>
+    api.get<UsageSummary>('/usage/summary').then(r => r.data),
 };
 
 // --- Billing ---

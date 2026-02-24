@@ -1,5 +1,6 @@
 import { LayoutDashboard, Users, Settings, Shield } from 'lucide-react';
 import { Link, useOutletContext } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../contexts/TenantContext';
 import { useBranding } from '../../contexts/BrandingContext';
@@ -13,7 +14,7 @@ export default function DashboardPage() {
   return (
     <div>
       {branding.dashboardHtml && (
-        <div className="mb-8" dangerouslySetInnerHTML={{ __html: branding.dashboardHtml }} />
+        <div className="mb-8" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(branding.dashboardHtml) }} />
       )}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">

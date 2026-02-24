@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { DollarSign, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
 import type { FinancialTransaction } from '../../types';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import TableSkeleton from '../../components/TableSkeleton';
+import { getErrorMessage } from '../../utils/errors';
 
 export default function AdminFinancialPage() {
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
@@ -18,7 +20,7 @@ export default function AdminFinancialPage() {
         setTransactions(data.transactions);
         setTotal(data.total);
       })
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   };
 
@@ -59,7 +61,9 @@ export default function AdminFinancialPage() {
       </form>
 
       {loading ? (
-        <LoadingSpinner size="lg" className="py-20" />
+        <div className="bg-dark-900/50 border border-dark-800 rounded-2xl overflow-hidden">
+          <TableSkeleton rows={8} cols={5} />
+        </div>
       ) : (
         <div className="bg-dark-900/50 border border-dark-800 rounded-2xl overflow-hidden">
           {transactions.length === 0 ? (
@@ -96,7 +100,7 @@ export default function AdminFinancialPage() {
                         </td>
                         <td className="px-6 py-3 text-sm text-white">{tx.description}</td>
                         <td className="px-6 py-3 text-sm text-white text-right font-mono">
-                          ${(tx.amountCents / 100).toFixed(2)}
+                          {new Intl.NumberFormat(undefined, { style: 'currency', currency: tx.currency || 'usd' }).format(tx.amountCents / 100)}
                         </td>
                         <td className="px-6 py-3 text-sm text-dark-400 font-mono">{tx.invoiceNumber}</td>
                       </tr>

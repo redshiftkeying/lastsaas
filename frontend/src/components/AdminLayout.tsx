@@ -15,9 +15,12 @@ import {
   Shield,
   Code2,
   Paintbrush,
+  Tag,
+  Megaphone,
 } from 'lucide-react';
 import { useTenant } from '../contexts/TenantContext';
 import { messagesApi } from '../api/client';
+
 import { Navigate } from 'react-router-dom';
 
 export default function AdminLayout() {
@@ -28,7 +31,7 @@ export default function AdminLayout() {
   useEffect(() => {
     messagesApi.unreadCount()
       .then((data) => setUnreadCount(data.count))
-      .catch(() => {});
+      .catch(() => console.debug('Failed to fetch unread count'));
   }, []);
 
   if (!isRootTenant) {
@@ -44,6 +47,8 @@ export default function AdminLayout() {
     { path: '/last/tenants', icon: Building2, label: 'Tenants' },
     { path: '/last/plans', icon: CreditCard, label: 'Plans' },
     { path: '/last/financial', icon: DollarSign, label: 'Financial' },
+    { path: '/last/promotions', icon: Tag, label: 'Promotions' },
+    { path: '/last/announcements', icon: Megaphone, label: 'Announcements' },
     { path: '/last/health', icon: Activity, label: 'System Health' },
     { path: '/last/logs', icon: FileText, label: 'Logs' },
     { path: '/last/config', icon: Settings, label: 'Configuration' },

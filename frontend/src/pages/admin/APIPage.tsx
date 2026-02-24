@@ -4,9 +4,11 @@ import {
   Shield, User, ExternalLink, Pencil, Play, ChevronDown, ChevronUp,
   FileText, BookOpen,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
 import type { APIKey, Webhook as WebhookType, WebhookDelivery, WebhookEventTypeInfo } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 // ─── Helpers ─────────────────────────────────────────────
 
@@ -462,7 +464,7 @@ function WebhookFormModal({ webhook, onClose, onSaved }: {
         }
       }
       setExpandedCategories(cats);
-    }).catch(() => {});
+    }).catch(err => toast.error(getErrorMessage(err)));
   }, []);
 
   const toggleEvent = (type: string) => {
@@ -852,7 +854,7 @@ function WebhookDetailModal({ webhookId, onClose, onRefresh }: {
                       <div className="flex items-center gap-3">
                         <span className={`w-2 h-2 rounded-full ${d.success ? 'bg-emerald-400' : 'bg-red-400'}`} />
                         <span className="text-xs font-mono text-dark-300">{d.eventType}</span>
-                        <span className="text-xs text-dark-500">{d.responseCode || 'err'} &middot; {d.durationMs}ms</span>
+                        <span className="text-xs text-dark-500">{d.responseCode || 'err'} &middot; {d.durationMs}ms{d.retryCount > 0 ? ` · retry ${d.retryCount}/${d.maxRetries}` : ''}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-dark-500">{timeAgo(d.createdAt)}</span>

@@ -70,6 +70,12 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read default currency from config
+	currency := strings.ToLower(h.store.Get("billing.default_currency"))
+	if currency == "" {
+		currency = "usd"
+	}
+
 	if req.PlanID != "" {
 		planID, err := primitive.ObjectIDFromHex(req.PlanID)
 		if err != nil {
@@ -162,6 +168,8 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 				TenantID:        tenant.ID.Hex(),
 				UserID:          user.ID.Hex(),
 				SeatQuantity:    int64(seats),
+				TrialDays:       plan.TrialDays,
+				Currency:        currency,
 			}
 
 			if plan.MonthlyPriceCents > 0 && plan.IncludedSeats > 0 {
@@ -177,7 +185,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 					perSeatAmount = seatAnnual - seatDiscount
 				}
 
-				basePriceID, err := h.stripe.GetOrCreatePrice(ctx, "plan_base_"+req.BillingInterval, planID, plan.Name+" (Base)", baseAmount, req.BillingInterval)
+				basePriceID, err := h.stripe.GetOrCreatePrice(ctx, "plan_base_"+req.BillingInterval, planID, plan.Name+" (Base)", baseAmount, req.BillingInterval, currency)
 				if err != nil {
 					log.Printf("Billing: failed to create base price: %v", err)
 					respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
@@ -190,7 +198,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 				additionalSeats := int64(seats) - int64(plan.IncludedSeats)
 				if additionalSeats > 0 {
-					seatPriceID, err := h.stripe.GetOrCreatePrice(ctx, "plan_seat_"+req.BillingInterval, planID, plan.Name+" (Per Seat)", perSeatAmount, req.BillingInterval)
+					seatPriceID, err := h.stripe.GetOrCreatePrice(ctx, "plan_seat_"+req.BillingInterval, planID, plan.Name+" (Per Seat)", perSeatAmount, req.BillingInterval, currency)
 					if err != nil {
 						log.Printf("Billing: failed to create seat price: %v", err)
 						respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
@@ -251,6 +259,8 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			BillingInterval: req.BillingInterval,
 			TenantID:        tenant.ID.Hex(),
 			UserID:          user.ID.Hex(),
+			TrialDays:       plan.TrialDays,
+			Currency:        currency,
 		})
 		if err != nil {
 			log.Printf("Billing: failed to create checkout session: %v", err)
@@ -294,6 +304,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			AmountCents: bundle.PriceCents,
 			TenantID:    tenant.ID.Hex(),
 			UserID:      user.ID.Hex(),
+			Currency:    currency,
 		})
 		if err != nil {
 			log.Printf("Billing: failed to create checkout session: %v", err)

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, Building2, Activity, AlertTriangle, DollarSign, TrendingUp, UserCheck, Plug } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
 import type { DailyMetricPoint, IntegrationCheck } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 
 interface DashboardData {
@@ -60,7 +62,7 @@ export default function AdminDashboardPage() {
           .map((i: IntegrationCheck) => i.name);
         setUnconfiguredIntegrations(unconfigured);
       })
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -75,7 +77,7 @@ export default function AdminDashboardPage() {
         setArrData(arr.data);
         setDauData(dau.data);
       })
-      .catch(() => {});
+      .catch(err => toast.error(getErrorMessage(err)));
   }, [chartRange]);
 
   if (loading) return <LoadingSpinner size="lg" className="py-20" />;

@@ -1,24 +1,41 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type RateLimiter struct {
+	// In-memory fallback
 	mu       sync.RWMutex
 	requests map[string]*rateLimitEntry
 	cleanup  *time.Ticker
 	done     chan bool
+
+	// MongoDB-backed (distributed)
+	collection *mongo.Collection
 }
 
 type rateLimitEntry struct {
 	count     int
 	windowEnd time.Time
+}
+
+// rateLimitDoc is the MongoDB document for distributed rate limiting.
+type rateLimitDoc struct {
+	Key       string    `bson:"_id"`
+	Count     int       `bson:"count"`
+	WindowEnd time.Time `bson:"windowEnd"`
+	ExpiresAt time.Time `bson:"expiresAt"`
 }
 
 type RateLimitConfig struct {
@@ -37,8 +54,11 @@ var (
 	InvitationLimit         = RateLimitConfig{MaxRequests: 20, Window: time.Hour}
 	MFAChallengeLimit       = RateLimitConfig{MaxRequests: 5, Window: 5 * time.Minute}
 	MagicLinkLimit          = RateLimitConfig{MaxRequests: 5, Window: 15 * time.Minute}
+	EmailPasswordResetLimit = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
+	EmailMagicLinkLimit     = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
 )
 
+// NewRateLimiter creates an in-memory-only rate limiter (fallback mode).
 func NewRateLimiter() *RateLimiter {
 	rl := &RateLimiter{
 		requests: make(map[string]*rateLimitEntry),
@@ -58,6 +78,23 @@ func NewRateLimiter() *RateLimiter {
 	return rl
 }
 
+// NewDistributedRateLimiter creates a rate limiter backed by MongoDB.
+// Falls back to in-memory if MongoDB operations fail.
+func NewDistributedRateLimiter(db *mongo.Database) *RateLimiter {
+	rl := NewRateLimiter()
+	rl.collection = db.Collection("rate_limits")
+
+	// Ensure TTL index for automatic cleanup.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, _ = rl.collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "expiresAt", Value: 1}},
+		Options: options.Index().SetExpireAfterSeconds(0),
+	})
+
+	return rl
+}
+
 func (rl *RateLimiter) Stop() {
 	rl.cleanup.Stop()
 	close(rl.done)
@@ -74,7 +111,69 @@ func (rl *RateLimiter) cleanupExpired() {
 	}
 }
 
+// Allow checks the rate limit for the given key. Uses MongoDB if available, falls back to in-memory.
 func (rl *RateLimiter) Allow(key string, config RateLimitConfig) (bool, int, time.Time) {
+	if rl.collection != nil {
+		allowed, remaining, resetTime, err := rl.allowDistributed(key, config)
+		if err == nil {
+			return allowed, remaining, resetTime
+		}
+		// Fallback to in-memory on DB error.
+	}
+	return rl.allowLocal(key, config)
+}
+
+func (rl *RateLimiter) allowDistributed(key string, config RateLimitConfig) (bool, int, time.Time, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	now := time.Now()
+	windowEnd := now.Add(config.Window)
+	// expiresAt gives MongoDB TTL some buffer to clean up after the window.
+	expiresAt := windowEnd.Add(time.Minute)
+
+	// Atomically increment counter, creating the doc if it doesn't exist.
+	// If the window has expired, reset the counter.
+	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
+
+	var doc rateLimitDoc
+
+	// First, try to increment within an existing valid window.
+	err := rl.collection.FindOneAndUpdate(ctx,
+		bson.M{"_id": key, "windowEnd": bson.M{"$gt": now}},
+		bson.M{"$inc": bson.M{"count": 1}},
+		opts,
+	).Decode(&doc)
+
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			// No valid window exists — reset/create with count=1.
+			err = rl.collection.FindOneAndUpdate(ctx,
+				bson.M{"_id": key},
+				bson.M{"$set": bson.M{
+					"count":     1,
+					"windowEnd": windowEnd,
+					"expiresAt": expiresAt,
+				}},
+				opts,
+			).Decode(&doc)
+			if err != nil {
+				return false, 0, now, err
+			}
+		} else {
+			return false, 0, now, err
+		}
+	}
+
+	if doc.Count > config.MaxRequests {
+		return false, 0, doc.WindowEnd, nil
+	}
+
+	remaining := config.MaxRequests - doc.Count
+	return true, remaining, doc.WindowEnd, nil
+}
+
+func (rl *RateLimiter) allowLocal(key string, config RateLimitConfig) (bool, int, time.Time) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 

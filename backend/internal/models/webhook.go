@@ -101,5 +101,7 @@ type WebhookDelivery struct {
 	ResponseBody string             `json:"responseBody" bson:"responseBody"`
 	Success      bool               `json:"success" bson:"success"`
 	Duration     int64              `json:"durationMs" bson:"durationMs"`
+	RetryCount   int                `json:"retryCount" bson:"retryCount"`
+	MaxRetries   int                `json:"maxRetries" bson:"maxRetries"`
 	CreatedAt    time.Time          `json:"createdAt" bson:"createdAt"`
 }

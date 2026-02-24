@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, CheckCircle, XCircle, Search, ChevronLeft, ChevronRight, ArrowUpDown, UserCheck } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi, setAuthToken } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import { useAuth } from '../../contexts/AuthContext';
 import type { UserListItem } from '../../types';
-import LoadingSpinner from '../../components/LoadingSpinner';
+import TableSkeleton from '../../components/TableSkeleton';
+import ConfirmModal from '../../components/ConfirmModal';
 
 const PAGE_SIZE = 25;
 
@@ -19,6 +22,8 @@ export default function UsersPage() {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const [sort, setSort] = useState(searchParams.get('sort') || '-createdAt');
+  const [statusTarget, setStatusTarget] = useState<UserListItem | null>(null);
+  const [statusLoading, setStatusLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchUsers = useCallback(async (p: number, q: string, s: string) => {
@@ -27,8 +32,8 @@ export default function UsersPage() {
       const data = await adminApi.listUsers({ page: p, limit: PAGE_SIZE, search: q || undefined, sort: s });
       setUsers(data.users || []);
       setTotal(data.total);
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -64,11 +69,16 @@ export default function UsersPage() {
   };
 
   const toggleStatus = async (user: UserListItem) => {
+    setStatusLoading(true);
     try {
       await adminApi.updateUserStatus(user.id, !user.isActive);
       setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isActive: !u.isActive } : u));
-    } catch {
-      // ignore
+      toast.success(`${user.displayName} ${user.isActive ? 'disabled' : 'enabled'}`);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setStatusLoading(false);
+      setStatusTarget(null);
     }
   };
 
@@ -81,8 +91,8 @@ export default function UsersPage() {
       setAuthToken(data.accessToken);
       await refreshUser();
       navigate('/dashboard');
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     }
   };
 
@@ -117,7 +127,7 @@ export default function UsersPage() {
       {/* Table */}
       <div className="bg-dark-900/50 backdrop-blur-sm border border-dark-800 rounded-2xl overflow-hidden">
         {loading && users.length === 0 ? (
-          <div className="py-20"><LoadingSpinner size="lg" /></div>
+          <TableSkeleton rows={8} cols={6} />
         ) : users.length === 0 ? (
           <div className="py-16 text-center text-dark-400">
             {search ? 'No users match your search.' : 'No users yet.'}
@@ -189,7 +199,7 @@ export default function UsersPage() {
                             </button>
                           )}
                           <button
-                            onClick={(e) => { e.stopPropagation(); toggleStatus(user); }}
+                            onClick={(e) => { e.stopPropagation(); setStatusTarget(user); }}
                             className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
                               user.isActive
                                 ? 'border-red-500/30 text-red-400 hover:bg-red-500/10'
@@ -258,6 +268,17 @@ export default function UsersPage() {
           </>
         )}
       </div>
+
+      <ConfirmModal
+        open={statusTarget !== null}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={() => statusTarget && toggleStatus(statusTarget)}
+        title={statusTarget?.isActive ? 'Disable User' : 'Enable User'}
+        message={`Are you sure you want to ${statusTarget?.isActive ? 'disable' : 'enable'} ${statusTarget?.displayName}?`}
+        confirmLabel={statusTarget?.isActive ? 'Disable' : 'Enable'}
+        confirmVariant={statusTarget?.isActive ? 'danger' : 'primary'}
+        loading={statusLoading}
+      />
     </div>
   );
 }

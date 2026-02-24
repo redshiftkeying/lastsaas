@@ -49,6 +49,7 @@ type Plan struct {
 	CreditResetPolicy    CreditResetPolicy           `json:"creditResetPolicy" bson:"creditResetPolicy"`
 	BonusCredits         int64                       `json:"bonusCredits" bson:"bonusCredits"`
 	UserLimit            int                         `json:"userLimit" bson:"userLimit"`
+	TrialDays            int                         `json:"trialDays" bson:"trialDays"`
 	Entitlements         map[string]EntitlementValue `json:"entitlements" bson:"entitlements"`
 	IsSystem             bool                        `json:"isSystem" bson:"isSystem"`
 	IsArchived           bool                        `json:"isArchived" bson:"isArchived"`

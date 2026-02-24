@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,6 +164,20 @@ func (c *Config) validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config fields: %s", strings.Join(missing, ", "))
 	}
+
+	if c.Server.Port < 1 || c.Server.Port > 65535 {
+		return fmt.Errorf("server.port must be between 1 and 65535")
+	}
+	if _, err := url.Parse(c.Frontend.URL); err != nil {
+		return fmt.Errorf("frontend.url is not a valid URL: %w", err)
+	}
+	if len(c.JWT.AccessSecret) < 16 {
+		return fmt.Errorf("jwt.access_secret must be at least 16 characters")
+	}
+	if len(c.JWT.RefreshSecret) < 16 {
+		return fmt.Errorf("jwt.refresh_secret must be at least 16 characters")
+	}
+
 	return nil
 }
 

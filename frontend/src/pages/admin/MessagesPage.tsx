@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { Mail, CheckCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { messagesApi } from '../../api/client';
 import type { Message } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import { getErrorMessage } from '../../utils/errors';
 
 export default function MessagesPage() {
   const { setUnreadCount } = useOutletContext<{ setUnreadCount: React.Dispatch<React.SetStateAction<number>> }>() ?? {};
@@ -13,7 +15,7 @@ export default function MessagesPage() {
   useEffect(() => {
     messagesApi.list()
       .then((data) => setMessages(data.messages))
-      .catch(() => {})
+      .catch(err => toast.error(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 

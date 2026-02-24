@@ -1,8 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { CreditCard, Plus, Trash2, X, Shield, AlertTriangle, Zap, Archive, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
+import { getErrorMessage } from '../../utils/errors';
 import type { Plan, EntitlementValue, EntitlementType, EntitlementKeyInfo, CreditBundle } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import ConfirmModal from '../../components/ConfirmModal';
 
 function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -25,12 +28,16 @@ export default function PlansPage() {
   const [deletingBundle, setDeletingBundle] = useState(false);
   const [deleteBundleError, setDeleteBundleError] = useState('');
 
+  // Archive/unarchive state
+  const [archiveTarget, setArchiveTarget] = useState<Plan | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+
   const fetchPlans = useCallback(async () => {
     try {
       const data = await adminApi.listPlans();
       setPlans(data.plans);
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -40,8 +47,8 @@ export default function PlansPage() {
     try {
       const data = await adminApi.listBundles();
       setBundles(data.bundles);
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(getErrorMessage(err));
     }
   }, []);
 
@@ -54,6 +61,7 @@ export default function PlansPage() {
     try {
       await adminApi.deletePlan(deleteTarget.id);
       setDeleteTarget(null);
+      toast.success(`${deleteTarget.name} deleted`);
       fetchPlans();
     } catch (err: any) {
       setDeleteError(err.response?.data?.error || 'Failed to delete');
@@ -62,21 +70,23 @@ export default function PlansPage() {
     }
   };
 
-  const handleArchive = async (plan: Plan) => {
+  const handleArchiveConfirm = async () => {
+    if (!archiveTarget) return;
+    setArchiveLoading(true);
     try {
-      await adminApi.archivePlan(plan.id);
+      if (archiveTarget.isArchived) {
+        await adminApi.unarchivePlan(archiveTarget.id);
+        toast.success(`${archiveTarget.name} unarchived`);
+      } else {
+        await adminApi.archivePlan(archiveTarget.id);
+        toast.success(`${archiveTarget.name} archived`);
+      }
       fetchPlans();
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleUnarchive = async (plan: Plan) => {
-    try {
-      await adminApi.unarchivePlan(plan.id);
-      fetchPlans();
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setArchiveLoading(false);
+      setArchiveTarget(null);
     }
   };
 
@@ -87,6 +97,7 @@ export default function PlansPage() {
     try {
       await adminApi.deleteBundle(deleteBundleTarget.id);
       setDeleteBundleTarget(null);
+      toast.success(`${deleteBundleTarget.name} deleted`);
       fetchBundles();
     } catch (err: any) {
       setDeleteBundleError(err.response?.data?.error || 'Failed to delete');
@@ -214,18 +225,20 @@ export default function PlansPage() {
                   <div className="flex items-center justify-end gap-1">
                     {!plan.isSystem && !plan.isArchived && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleArchive(plan); }}
+                        onClick={(e) => { e.stopPropagation(); setArchiveTarget(plan); }}
                         className="p-2 text-dark-400 hover:text-amber-400 transition-colors"
                         title="Archive plan"
+                        aria-label="Archive plan"
                       >
                         <Archive className="w-4 h-4" />
                       </button>
                     )}
                     {!plan.isSystem && plan.isArchived && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleUnarchive(plan); }}
+                        onClick={(e) => { e.stopPropagation(); setArchiveTarget(plan); }}
                         className="p-2 text-dark-400 hover:text-accent-emerald transition-colors"
                         title="Unarchive plan"
+                        aria-label="Unarchive plan"
                       >
                         <RotateCcw className="w-4 h-4" />
                       </button>
@@ -235,6 +248,7 @@ export default function PlansPage() {
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget(plan); }}
                         className="p-2 text-dark-400 hover:text-red-400 transition-colors"
                         title="Delete plan"
+                        aria-label="Delete plan"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -361,6 +375,7 @@ export default function PlansPage() {
                         onClick={(e) => { e.stopPropagation(); setDeleteBundleTarget(bundle); }}
                         className="p-2 text-dark-400 hover:text-red-400 transition-colors"
                         title="Delete bundle"
+                        aria-label="Delete bundle"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -389,6 +404,20 @@ export default function PlansPage() {
           onSaved={() => { setEditBundle(null); fetchBundles(); }}
         />
       )}
+
+      {/* Archive/Unarchive Confirm Modal */}
+      <ConfirmModal
+        open={archiveTarget !== null}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={handleArchiveConfirm}
+        title={archiveTarget?.isArchived ? 'Unarchive Plan' : 'Archive Plan'}
+        message={archiveTarget?.isArchived
+          ? `Are you sure you want to unarchive ${archiveTarget?.name}? It will become available for new subscriptions.`
+          : `Are you sure you want to archive ${archiveTarget?.name}? Existing subscribers will keep their plan, but no new subscriptions can be created.`}
+        confirmLabel={archiveTarget?.isArchived ? 'Unarchive' : 'Archive'}
+        confirmVariant={archiveTarget?.isArchived ? 'primary' : 'danger'}
+        loading={archiveLoading}
+      />
 
       {/* Delete Bundle Confirm Modal */}
       {deleteBundleTarget && (
@@ -456,6 +485,7 @@ function PlanFormModal({ plan, subscriberCount, onClose, onSaved }: PlanFormModa
   const [includedSeats, setIncludedSeats] = useState(String(plan?.includedSeats ?? 0));
   const [minSeats, setMinSeats] = useState(String(plan?.minSeats ?? 1));
   const [maxSeats, setMaxSeats] = useState(String(plan?.maxSeats ?? 0));
+  const [trialDays, setTrialDays] = useState(String(plan?.trialDays ?? 0));
   const [entitlements, setEntitlements] = useState<Record<string, EntitlementValue>>(plan?.entitlements ?? {});
 
   const [saving, setSaving] = useState(false);
@@ -464,7 +494,7 @@ function PlanFormModal({ plan, subscriberCount, onClose, onSaved }: PlanFormModa
   // Known entitlement keys from all plans
   const [knownKeys, setKnownKeys] = useState<EntitlementKeyInfo[]>([]);
   useEffect(() => {
-    adminApi.listEntitlementKeys().then(data => setKnownKeys(data.keys)).catch(() => {});
+    adminApi.listEntitlementKeys().then(data => setKnownKeys(data.keys)).catch(() => console.debug('Failed to fetch entitlement keys'));
   }, []);
 
   // New entitlement row state
@@ -497,6 +527,7 @@ function PlanFormModal({ plan, subscriberCount, onClose, onSaved }: PlanFormModa
       includedSeats: parseInt(includedSeats) || 0,
       minSeats: parseInt(minSeats) || 1,
       maxSeats: parseInt(maxSeats) || 0,
+      trialDays: parseInt(trialDays) || 0,
       entitlements,
     };
 
@@ -619,6 +650,19 @@ function PlanFormModal({ plan, subscriberCount, onClose, onSaved }: PlanFormModa
                   className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none"
                 />
                 <p className="text-xs text-dark-500 mt-1">Set to 0 to hide annual option</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-dark-300 mb-1">Trial Days</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={trialDays}
+                  onChange={e => setTrialDays(e.target.value)}
+                  onFocus={e => e.target.select()}
+                  onBlur={() => setTrialDays(String(parseInt(trialDays) || 0))}
+                  className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none"
+                />
+                <p className="text-xs text-dark-500 mt-1">0 = no trial</p>
               </div>
             </div>
           </div>

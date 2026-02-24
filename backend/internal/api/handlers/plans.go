@@ -169,6 +169,7 @@ type planRequest struct {
 	CreditResetPolicy    string                             `json:"creditResetPolicy"`
 	BonusCredits         int64                              `json:"bonusCredits"`
 	UserLimit            int                                `json:"userLimit"`
+	TrialDays            int                                `json:"trialDays"`
 	Entitlements         map[string]models.EntitlementValue `json:"entitlements"`
 }
 
@@ -268,6 +269,7 @@ func (h *PlansHandler) CreatePlan(w http.ResponseWriter, r *http.Request) {
 		CreditResetPolicy:    models.CreditResetPolicy(req.CreditResetPolicy),
 		BonusCredits:         req.BonusCredits,
 		UserLimit:            req.UserLimit,
+		TrialDays:            req.TrialDays,
 		Entitlements:         entitlements,
 		IsSystem:             false,
 		CreatedAt:            now,
@@ -358,6 +360,7 @@ func (h *PlansHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 		"creditResetPolicy":    req.CreditResetPolicy,
 		"bonusCredits":         req.BonusCredits,
 		"userLimit":            req.UserLimit,
+		"trialDays":            req.TrialDays,
 		"entitlements":         entitlements,
 		"updatedAt":            time.Now(),
 	}}
@@ -742,6 +745,7 @@ func (h *PlansHandler) ListPlansPublic(w http.ResponseWriter, r *http.Request) {
 		"entitlementUpgradePromptTitle":       h.configStore.Get("entitlement.upgrade_prompt.title"),
 		"entitlementUpgradePromptBody":        h.configStore.Get("entitlement.upgrade_prompt.body"),
 		"entitlementUpgradePromptNumericBody": h.configStore.Get("entitlement.upgrade_prompt.numeric_body"),
+		"currency":                            h.configStore.Get("billing.default_currency"),
 	})
 }
 
