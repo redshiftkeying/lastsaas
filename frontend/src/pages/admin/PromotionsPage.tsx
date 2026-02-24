@@ -1,14 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Tag, Plus, X, Ban } from 'lucide-react';
+import { Tag, Plus, X, Ban, Calendar, Filter } from 'lucide-react';
 import { toast } from 'sonner';
 import { adminApi } from '../../api/client';
 import { getErrorMessage } from '../../utils/errors';
-import type { Promotion } from '../../types';
+import type { Promotion, EligibleProduct } from '../../types';
 import TableSkeleton from '../../components/TableSkeleton';
 import ConfirmModal from '../../components/ConfirmModal';
 
 export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [productNames, setProductNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState<Promotion | null>(null);
@@ -18,6 +19,7 @@ export default function PromotionsPage() {
     try {
       const data = await adminApi.listPromotions();
       setPromotions(data.promotions);
+      setProductNames(data.productNames || {});
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -42,6 +44,18 @@ export default function PromotionsPage() {
     }
   };
 
+  const formatExpiry = (ts: number) => {
+    if (!ts) return null;
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const isExpired = d < now;
+    return (
+      <span className={isExpired ? 'text-red-400' : 'text-dark-400'}>
+        {isExpired ? 'Expired ' : 'Expires '}{d.toLocaleDateString()}
+      </span>
+    );
+  };
+
   return (
     <div>
       <div className="mb-8 flex items-center justify-between">
@@ -63,7 +77,7 @@ export default function PromotionsPage() {
 
       {loading ? (
         <div className="bg-dark-900/50 border border-dark-800 rounded-2xl overflow-hidden">
-          <TableSkeleton rows={6} cols={5} />
+          <TableSkeleton rows={6} cols={6} />
         </div>
       ) : (
         <div className="bg-dark-900/50 border border-dark-800 rounded-2xl overflow-hidden">
@@ -77,8 +91,9 @@ export default function PromotionsPage() {
                     <th className="text-left px-6 py-3 text-xs font-medium text-dark-400 uppercase">Code</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-dark-400 uppercase">Discount</th>
                     <th className="text-left px-6 py-3 text-xs font-medium text-dark-400 uppercase">Status</th>
+                    <th className="text-left px-6 py-3 text-xs font-medium text-dark-400 uppercase">Applies To</th>
                     <th className="text-right px-6 py-3 text-xs font-medium text-dark-400 uppercase">Redemptions</th>
-                    <th className="text-left px-6 py-3 text-xs font-medium text-dark-400 uppercase">Created</th>
+                    <th className="text-left px-6 py-3 text-xs font-medium text-dark-400 uppercase">Expiry</th>
                     <th className="text-right px-6 py-3 text-xs font-medium text-dark-400 uppercase">Actions</th>
                   </tr>
                 </thead>
@@ -101,12 +116,27 @@ export default function PromotionsPage() {
                           {promo.active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
+                      <td className="px-6 py-3 text-sm">
+                        {promo.appliesToProducts && promo.appliesToProducts.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {promo.appliesToProducts.map(pid => (
+                              <span key={pid} className="px-1.5 py-0.5 text-xs bg-dark-700 text-dark-300 rounded">
+                                {productNames[pid] || pid.slice(0, 12) + '...'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-dark-500 text-xs">All products</span>
+                        )}
+                      </td>
                       <td className="px-6 py-3 text-sm text-dark-300 text-right font-mono">
                         {promo.timesRedeemed}
                         {promo.maxRedemptions > 0 && ` / ${promo.maxRedemptions}`}
                       </td>
-                      <td className="px-6 py-3 text-sm text-dark-400 whitespace-nowrap">
-                        {new Date(promo.created * 1000).toLocaleDateString()}
+                      <td className="px-6 py-3 text-sm whitespace-nowrap">
+                        {promo.expiresAt ? formatExpiry(promo.expiresAt) : (
+                          <span className="text-dark-500 text-xs">Never</span>
+                        )}
                       </td>
                       <td className="px-6 py-3 text-right">
                         {promo.active && (
@@ -156,23 +186,60 @@ function CreatePromotionModal({ onClose, onCreated }: { onClose: () => void; onC
   const [percentOff, setPercentOff] = useState('10');
   const [amountOff, setAmountOff] = useState('5.00');
   const [maxRedemptions, setMaxRedemptions] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [restrictProducts, setRestrictProducts] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [eligibleProducts, setEligibleProducts] = useState<EligibleProduct[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Fetch eligible products when restriction toggle is enabled.
+  useEffect(() => {
+    if (restrictProducts && eligibleProducts.length === 0) {
+      setLoadingProducts(true);
+      adminApi.listEligibleProducts()
+        .then(data => setEligibleProducts(data.items))
+        .catch(err => toast.error(getErrorMessage(err)))
+        .finally(() => setLoadingProducts(false));
+    }
+  }, [restrictProducts, eligibleProducts.length]);
+
+  const toggleProduct = (id: string) => {
+    setSelectedProducts(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     if (!code.trim()) {
       setError('Code is required');
       return;
     }
+    if (restrictProducts && selectedProducts.size === 0) {
+      setError('Select at least one plan or bundle, or disable product restrictions');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
+      const appliesTo = restrictProducts
+        ? eligibleProducts
+            .filter(p => selectedProducts.has(p.id))
+            .map(p => ({ type: p.type, id: p.id }))
+        : undefined;
+
       await adminApi.createPromotion({
         code: code.trim().toUpperCase(),
         name: name.trim() || undefined,
         percentOff: discountType === 'percent' ? parseFloat(percentOff) || 0 : undefined,
         amountOff: discountType === 'amount' ? Math.round((parseFloat(amountOff) || 0) * 100) : undefined,
         maxRedemptions: maxRedemptions ? parseInt(maxRedemptions) : undefined,
+        expiresAt: expiresAt || undefined,
+        appliesTo,
       });
       toast.success(`Promotion code ${code.trim().toUpperCase()} created`);
       onCreated();
@@ -183,10 +250,13 @@ function CreatePromotionModal({ onClose, onCreated }: { onClose: () => void; onC
     }
   };
 
+  const plans = eligibleProducts.filter(p => p.type === 'plan');
+  const bundles = eligibleProducts.filter(p => p.type === 'bundle');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-dark-900 rounded-2xl border border-dark-700 p-6 w-full max-w-md" role="dialog" aria-modal="true">
+      <div className="relative bg-dark-900 rounded-2xl border border-dark-700 p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-white">Create Promotion Code</h3>
           <button onClick={onClose} className="p-2 text-dark-400 hover:text-white transition-colors" aria-label="Close">
@@ -263,16 +333,94 @@ function CreatePromotionModal({ onClose, onCreated }: { onClose: () => void; onC
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-1">Max Redemptions (optional)</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={maxRedemptions}
-              onChange={e => setMaxRedemptions(e.target.value)}
-              placeholder="Unlimited"
-              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none"
-            />
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-dark-300 mb-1">Max Redemptions</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={maxRedemptions}
+                onChange={e => setMaxRedemptions(e.target.value)}
+                placeholder="Unlimited"
+                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-dark-300 mb-1 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5" />
+                Expiration Date
+              </label>
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={e => setExpiresAt(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none [color-scheme:dark]"
+              />
+            </div>
+          </div>
+
+          {/* Product restrictions */}
+          <div className="border-t border-dark-800 pt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={restrictProducts}
+                onChange={e => setRestrictProducts(e.target.checked)}
+                className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-500 focus:ring-primary-500"
+              />
+              <Filter className="w-4 h-4 text-dark-400" />
+              <span className="text-sm font-medium text-dark-300">Restrict to specific plans or credit bundles</span>
+            </label>
+
+            {restrictProducts && (
+              <div className="mt-3 space-y-3">
+                {loadingProducts ? (
+                  <p className="text-xs text-dark-500">Loading products...</p>
+                ) : eligibleProducts.length === 0 ? (
+                  <p className="text-xs text-dark-500">No paid plans or credit bundles configured</p>
+                ) : (
+                  <>
+                    {plans.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-dark-400 uppercase tracking-wide mb-2">Plans</p>
+                        <div className="space-y-1.5">
+                          {plans.map(p => (
+                            <label key={p.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-dark-800/50 border border-dark-700/50 cursor-pointer hover:border-dark-600 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.has(p.id)}
+                                onChange={() => toggleProduct(p.id)}
+                                className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-500 focus:ring-primary-500"
+                              />
+                              <span className="text-sm text-white">{p.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {bundles.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-dark-400 uppercase tracking-wide mb-2">Credit Bundles</p>
+                        <div className="space-y-1.5">
+                          {bundles.map(b => (
+                            <label key={b.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-dark-800/50 border border-dark-700/50 cursor-pointer hover:border-dark-600 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={selectedProducts.has(b.id)}
+                                onChange={() => toggleProduct(b.id)}
+                                className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-500 focus:ring-primary-500"
+                              />
+                              <span className="text-sm text-white">{b.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

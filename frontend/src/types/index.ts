@@ -304,7 +304,15 @@ export interface Promotion {
   currency: string;
   timesRedeemed: number;
   maxRedemptions: number;
+  expiresAt: number;
   created: number;
+  appliesToProducts: string[];
+}
+
+export interface EligibleProduct {
+  id: string;
+  name: string;
+  type: 'plan' | 'bundle';
 }
 
 // --- System Health ---

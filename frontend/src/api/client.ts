@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, MFARequiredResponse, AuthProviders, ActiveSession, ActivityLogEntry, PasskeyCredential, ImpersonationResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage, Promotion, Announcement, UsageSummary } from '../types';
+import type { AuthResponse, MFARequiredResponse, AuthProviders, ActiveSession, ActivityLogEntry, PasskeyCredential, ImpersonationResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage, Promotion, EligibleProduct, Announcement, UsageSummary } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -254,8 +254,10 @@ export const adminApi = {
 
   // Promotions
   listPromotions: () =>
-    api.get<{ promotions: Promotion[] }>('/admin/promotions').then(r => r.data),
-  createPromotion: (data: { code: string; name?: string; percentOff?: number; amountOff?: number; currency?: string; maxRedemptions?: number }) =>
+    api.get<{ promotions: Promotion[]; productNames: Record<string, string> }>('/admin/promotions').then(r => r.data),
+  listEligibleProducts: () =>
+    api.get<{ items: EligibleProduct[] }>('/admin/promotions/eligible-products').then(r => r.data),
+  createPromotion: (data: { code: string; name?: string; percentOff?: number; amountOff?: number; currency?: string; maxRedemptions?: number; expiresAt?: string; appliesTo?: { type: string; id: string }[] }) =>
     api.post<{ id: string; code: string }>('/admin/promotions', data).then(r => r.data),
   deactivatePromotion: (id: string) =>
     api.post('/admin/promotions/deactivate', { id }).then(r => r.data),
