@@ -657,7 +657,6 @@ function WebhookDetailModal({ webhookId, onClose, onRefresh }: {
     try {
       const data = await adminApi.getWebhook(webhookId);
       setHook(data.webhook);
-      setSecret(data.secret);
       setDeliveries(data.deliveries);
     } catch { /* ignore */ } finally {
       setLoading(false);
