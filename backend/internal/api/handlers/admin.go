@@ -46,6 +46,27 @@ func NewAdminHandler(database *db.MongoDB, emitter events.Emitter, sysLogger *sy
 	}
 }
 
+// isRootTenantOwner returns true if the given user is the owner of the root tenant.
+func (h *AdminHandler) isRootTenantOwner(ctx context.Context, userID primitive.ObjectID) bool {
+	count, _ := h.db.TenantMemberships().CountDocuments(ctx, bson.M{
+		"userId": userID,
+		"role":   models.RoleOwner,
+	})
+	if count == 0 {
+		return false
+	}
+	// Verify the tenant is root
+	var membership models.TenantMembership
+	if err := h.db.TenantMemberships().FindOne(ctx, bson.M{"userId": userID, "role": models.RoleOwner}).Decode(&membership); err != nil {
+		return false
+	}
+	var tenant models.Tenant
+	if err := h.db.Tenants().FindOne(ctx, bson.M{"_id": membership.TenantID}).Decode(&tenant); err != nil {
+		return false
+	}
+	return tenant.IsRoot
+}
+
 func (h *AdminHandler) SetHealthService(svc *health.Service, getConfig func(string) string) {
 	h.health = svc
 	h.getConfig = getConfig
@@ -715,6 +736,13 @@ func (h *AdminHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Non-owners cannot deactivate the root tenant owner
+	actingMembership, _ := middleware.GetMembershipFromContext(r.Context())
+	if actingMembership.Role != models.RoleOwner && h.isRootTenantOwner(r.Context(), userID) {
+		respondWithError(w, http.StatusForbidden, "Cannot modify the root tenant owner")
+		return
+	}
+
 	var req struct {
 		IsActive bool `json:"isActive"`
 	}
@@ -972,6 +1000,13 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Non-owners cannot modify the root tenant owner
+	actingMembership, _ := middleware.GetMembershipFromContext(r.Context())
+	if actingMembership.Role != models.RoleOwner && h.isRootTenantOwner(r.Context(), userID) {
+		respondWithError(w, http.StatusForbidden, "Cannot modify the root tenant owner")
+		return
+	}
+
 	var req struct {
 		Email       *string `json:"email"`
 		DisplayName *string `json:"displayName"`
@@ -1030,6 +1065,13 @@ func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 	tenantID, err := primitive.ObjectIDFromHex(vars["tenantId"])
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid tenant ID")
+		return
+	}
+
+	// Non-owners cannot change the root tenant owner's role
+	actingMembership, _ := middleware.GetMembershipFromContext(r.Context())
+	if actingMembership.Role != models.RoleOwner && h.isRootTenantOwner(r.Context(), userID) {
+		respondWithError(w, http.StatusForbidden, "Cannot modify the root tenant owner's role")
 		return
 	}
 
