@@ -34,6 +34,7 @@ LastSaaS eliminates that. Fork it, point an AI agent at it, and start building y
 - Built-in API documentation (HTML and Markdown)
 - Real-time system health monitoring
 - Financial metrics dashboard (revenue, ARR, DAU, MAU)
+- MCP (Model Context Protocol) server for AI-powered admin access
 - CLI tools for server administration
 - Auto-versioning with database migrations
 - Production deployment on Fly.io
@@ -182,6 +183,31 @@ This is open-source infrastructure for the agentic era of software — where the
 - `lastsaas config list|get|set` — Manage configuration variables
 - `lastsaas version` — Show binary and database versions
 - `lastsaas status` — Check system health
+- `lastsaas mcp` — Start the MCP server (see [MCP Server](#mcp-server-ai-admin-access) below)
+
+### MCP Server (AI Admin Access)
+
+A built-in [Model Context Protocol](https://modelcontextprotocol.io) server gives AI assistants like Claude read-only access to your admin data — dashboards, users, tenants, financials, logs, health, and more. Useful for asking questions like "what's our ARR trend?" or "show me critical logs from the last hour" in natural language.
+
+- **26 read-only tools** across 13 categories — no write operations, safe by design
+- **2 resources** — `lastsaas://dashboard` and `lastsaas://health` for automatic context
+- **API key authentication** — requires a root-tenant API key, same auth as the admin API
+- **Stdio transport** — runs locally, compatible with Claude Desktop and Claude Code
+
+**Tool categories:**
+- **About** — software version and environment
+- **Dashboard** — user/tenant counts, health overview
+- **Tenants** — list with filtering, detailed view with members
+- **Users** — list with search, detailed view with auth methods and memberships
+- **Financial** — transaction history, revenue/ARR/DAU/MAU time-series metrics
+- **Logs** — full-text search with severity/category/date filters, severity counts
+- **Health** — current system metrics, time-series health data, node list, integration status
+- **Config** — list and inspect runtime configuration variables
+- **Plans** — plan details, entitlement keys, credit bundles
+- **Announcements** — list published and draft announcements
+- **Promotions** — Stripe promotion codes with coupon details
+- **Security** — API key inventory (previews only), root tenant members
+- **Webhooks** — webhook configs, event type reference, delivery history
 
 ### Security
 - Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
@@ -405,7 +431,7 @@ lastsaas/
   backend/
     cmd/
       server/main.go              Entry point (HTTP server, route wiring)
-      lastsaas/main.go            CLI administration tool
+      lastsaas/main.go            CLI administration tool + MCP server
     config/                       YAML config files
     internal/
       api/handlers/               HTTP handlers (auth, admin, tenant, billing, branding, webhooks, etc.)
@@ -453,6 +479,101 @@ LastSaaS includes built-in, self-hosted API documentation:
 - **Markdown reference**: `GET /api/docs/markdown` — for embedding in external documentation
 
 The documentation is generated from code and always matches the running version. It covers all endpoints, parameters, request/response formats, and all 19 webhook event types with payload descriptions.
+
+---
+
+## MCP Server Setup
+
+The MCP server lets AI assistants query your admin data in natural language. It proxies read-only requests to the LastSaaS admin API using an API key.
+
+### Prerequisites
+
+1. A running LastSaaS instance (local or deployed)
+2. A root-tenant API key — create one in **Admin → API Keys** with **admin** authority
+
+### Usage with Claude Desktop
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "lastsaas": {
+      "command": "/path/to/lastsaas",
+      "args": ["mcp"],
+      "env": {
+        "LASTSAAS_URL": "https://your-app.fly.dev",
+        "LASTSAAS_API_KEY": "lsk_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+### Usage with Claude Code
+
+Add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "lastsaas": {
+      "command": "/path/to/lastsaas",
+      "args": ["mcp"],
+      "env": {
+        "LASTSAAS_URL": "https://your-app.fly.dev",
+        "LASTSAAS_API_KEY": "lsk_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+### Build the CLI binary
+
+```bash
+cd backend
+go build -o lastsaas ./cmd/lastsaas
+```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LASTSAAS_URL` | Yes | Base URL of the LastSaaS instance (e.g. `http://localhost:4290` or `https://your-app.fly.dev`) |
+| `LASTSAAS_API_KEY` | Yes | Root-tenant API key with admin authority (starts with `lsk_`) |
+
+### Available Tools (26)
+
+| Tool | Description |
+|------|-------------|
+| `get_about` | Software version and environment |
+| `dashboard_stats` | User/tenant counts and health overview |
+| `list_tenants` | Paginated tenant list with search and filters |
+| `get_tenant` | Detailed tenant with plan, billing, and members |
+| `list_users` | Paginated user list with search and filters |
+| `get_user` | Detailed user with auth methods and memberships |
+| `list_transactions` | Financial transactions with search and filters |
+| `get_financial_metrics` | Revenue, ARR, DAU, MAU time-series |
+| `search_logs` | Full-text log search with severity/category/date filters |
+| `get_log_severity_counts` | Log counts by severity level |
+| `get_system_health` | Current CPU, memory, disk, HTTP stats |
+| `get_health_metrics` | Time-series health data (per-node or aggregate) |
+| `list_nodes` | Server nodes with status and version |
+| `get_integrations` | Third-party integration health |
+| `list_config` | All runtime configuration variables |
+| `get_config` | Single config variable details |
+| `list_plans` | Subscription plans with pricing and entitlements |
+| `get_plan` | Detailed plan info |
+| `list_entitlement_keys` | Entitlement key catalog |
+| `list_credit_bundles` | Credit bundle pricing |
+| `list_announcements` | Published and draft announcements |
+| `list_promotions` | Stripe promotion codes and coupons |
+| `list_api_keys` | API key inventory (previews only) |
+| `list_root_members` | Admin team and pending invitations |
+| `list_webhooks` | Outbound webhook configurations |
+| `list_webhook_event_types` | Available webhook event types |
+| `get_webhook` | Webhook detail with delivery history |
 
 ---
 
