@@ -39,3 +39,6 @@ Thumbs.db
 bundle/
 dist/
 *.mcpb
+
+# MCP registry tokens
+.mcpregistry_*
