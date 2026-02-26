@@ -613,6 +613,201 @@ go build -o lastsaas ./cmd/lastsaas
 | `list_webhook_event_types` | Available webhook event types |
 | `get_webhook` | Webhook detail with delivery history |
 
+### MCP Examples
+
+These examples show how the MCP tools work in practice. Each example lists the user prompt and the exact tool calls that execute behind the scenes.
+
+#### Example 1: Check Business Overview
+
+**Prompt:** "How's my SaaS doing today?"
+
+**Tool calls:**
+1. `dashboard_stats` — returns a snapshot:
+   ```
+   Users: 1,284 (12 new today)
+   Tenants: 89 (3 new this week)
+   Health: All systems healthy
+   Active alerts: 0
+   ```
+
+#### Example 2: Investigate Revenue Trend
+
+**Prompt:** "Show me our revenue trend for the last 30 days"
+
+**Tool calls:**
+1. `get_financial_metrics` — queries time-series data:
+   ```json
+   { "range": "30d", "metric": "revenue" }
+   ```
+   Returns daily revenue data points (values in cents) for charting, e.g.:
+   ```
+   2026-01-27: $1,250.00
+   2026-01-28: $890.00
+   ...
+   2026-02-25: $2,100.00
+   ```
+2. `get_financial_metrics` — follow up with ARR:
+   ```json
+   { "range": "30d", "metric": "arr" }
+   ```
+
+#### Example 3: Find a Specific Tenant
+
+**Prompt:** "Look up the Acme Corp tenant and show me their details"
+
+**Tool calls:**
+1. `list_tenants` — searches by name:
+   ```json
+   { "search": "Acme Corp" }
+   ```
+   Returns matching tenants with IDs, plan names, and billing status.
+2. `get_tenant` — fetches full details using the tenant ID:
+   ```json
+   { "id": "6789abc..." }
+   ```
+   Returns plan info, billing status, credit balances, subscription dates, and a full member list with roles.
+
+#### Example 4: Search for Critical Errors
+
+**Prompt:** "Were there any critical errors in the last hour?"
+
+**Tool calls:**
+1. `search_logs` — filters by severity and time:
+   ```json
+   {
+     "severity": "critical",
+     "fromDate": "2026-02-26T14:00:00Z",
+     "perPage": "50"
+   }
+   ```
+   Returns log entries with timestamps, categories, messages, and metadata. For example:
+   ```
+   [critical] 14:23:05 billing — Stripe webhook signature verification failed
+   [critical] 14:31:12 security — Log injection pattern detected in user input
+   ```
+2. `get_log_severity_counts` — provides overall distribution:
+   ```
+   critical: 2, high: 15, medium: 89, low: 342, debug: 1,204
+   ```
+
+#### Example 5: Monitor System Health
+
+**Prompt:** "How's the system health? Are all integrations working?"
+
+**Tool calls:**
+1. `get_system_health` — returns current metrics:
+   ```
+   CPU: 12.3%
+   Memory: 245 MB / 512 MB (47.8%)
+   Disk: 1.2 GB / 8 GB (15.0%)
+   HTTP: 1,234 requests (p95 latency: 45ms)
+   MongoDB: 12 active connections
+   ```
+2. `get_integrations` — checks third-party connectivity:
+   ```
+   MongoDB: healthy (3ms response)
+   Stripe: healthy (120ms response, 89 calls/24h)
+   Resend: healthy (95ms response, 12 calls/24h)
+   Google OAuth: healthy
+   ```
+
+#### Example 6: Audit API Key Usage
+
+**Prompt:** "Show me all active API keys and when they were last used"
+
+**Tool calls:**
+1. `list_api_keys` — returns inventory (full keys are never exposed):
+   ```
+   "Production Automation" (admin) — lsk_...a3f2 — last used: 2 hours ago
+   "CI/CD Pipeline" (admin) — lsk_...b7e1 — last used: 15 minutes ago
+   "Customer Integration" (user) — lsk_...c9d4 — last used: 3 days ago
+   "Old Test Key" (admin) — lsk_...d1e5 — last used: never
+   ```
+
+#### Example 7: Review Subscription Plans
+
+**Prompt:** "What plans do we offer and how many subscribers does each have?"
+
+**Tool calls:**
+1. `list_plans` — returns all plans with pricing and subscriber counts:
+   ```
+   Starter: $9/mo ($86/yr) — 45 subscribers — 5 seat limit
+   Pro: $29/mo ($278/yr) — 31 subscribers — 25 seat limit, per-seat pricing
+   Enterprise: $99/mo ($950/yr) — 8 subscribers — unlimited seats
+   ```
+2. `list_credit_bundles` — shows available credit purchases:
+   ```
+   Small Pack: 100 credits — $5.00 — active
+   Medium Pack: 500 credits — $20.00 — active
+   Large Pack: 2000 credits — $60.00 — active
+   ```
+
+#### Example 8: Check Webhook Delivery
+
+**Prompt:** "Are our webhooks delivering successfully? Show me the recent history for the production webhook"
+
+**Tool calls:**
+1. `list_webhooks` — shows all configured webhooks:
+   ```
+   "Production" — https://api.example.com/webhooks — 12 events — active
+   "Staging" — https://staging.example.com/hooks — 5 events — active
+   ```
+2. `get_webhook` — fetches delivery history for the production webhook:
+   ```json
+   { "id": "abc123..." }
+   ```
+   Returns recent delivery attempts with status codes, response times, and any failures:
+   ```
+   2026-02-26 14:30:01 — subscription.activated — 200 OK (120ms)
+   2026-02-26 14:15:22 — payment.received — 200 OK (95ms)
+   2026-02-26 13:45:10 — member.joined — 500 Error (340ms)
+   ```
+
+#### Example 9: User Lookup and Membership
+
+**Prompt:** "Find the user with email alice@example.com and show me their tenant memberships"
+
+**Tool calls:**
+1. `list_users` — searches by email:
+   ```json
+   { "search": "alice@example.com" }
+   ```
+   Returns the matching user with ID, verification status, and last login.
+2. `get_user` — fetches full details:
+   ```json
+   { "id": "def456..." }
+   ```
+   Returns:
+   ```
+   Email: alice@example.com (verified)
+   Auth: password + Google OAuth
+   MFA: TOTP enabled
+   Memberships:
+     — Acme Corp (owner) — joined 2026-01-15
+     — Side Project Inc (admin) — joined 2026-02-10
+   Last login: 2 hours ago
+   ```
+
+#### Example 10: Health Metrics Deep Dive
+
+**Prompt:** "Show me the CPU and memory trends across all nodes for the last 24 hours"
+
+**Tool calls:**
+1. `list_nodes` — identifies all server nodes:
+   ```
+   node-1 (v1.0.0) — healthy — last seen: 30s ago
+   node-2 (v1.0.0) — healthy — last seen: 28s ago
+   ```
+2. `get_health_metrics` — fetches aggregate time-series data:
+   ```json
+   { "range": "24h" }
+   ```
+   Returns data points every 60 seconds with CPU %, memory %, disk %, HTTP request counts, and latency percentiles — ready for charting.
+3. `get_health_metrics` — optionally drill into a specific node:
+   ```json
+   { "node": "node-1", "range": "24h" }
+   ```
+
 ---
 
 ## Deployment
@@ -671,6 +866,14 @@ Here's what's already wired up for you:
 9. **Use the event emitter** — emit events from your handlers and they'll automatically be delivered to configured webhooks
 10. **Use API keys** — your endpoints automatically support both JWT and API key authentication
 11. **Use the branding system** — your UI inherits the white-label theme automatically via the BrandingContext
+
+---
+
+## Privacy Policy
+
+LastSaaS is self-hosted software — you control your database, your hosting, and your data. The MCP server connects to your LastSaaS instance via the HTTP API using read-only tools — no data is transmitted to Metavert LLC or any third party.
+
+For the full privacy policy, see: https://www.metavert.io/lastsaas-privacy-policy
 
 ---
 
