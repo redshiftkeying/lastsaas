@@ -1,15 +1,18 @@
+fixes:
+  - "lastsaas/::backend/"
+
 coverage:
   status:
     project:
       default:
         target: 80%
   ignore:
-    - "lastsaas/cmd/**"
-    - "lastsaas/internal/db/**"
-    - "lastsaas/internal/testutil/**"
-    - "lastsaas/internal/configstore/**"
-    - "lastsaas/internal/email/**"
-    - "lastsaas/internal/health/**"
-    - "lastsaas/internal/metrics/**"
-    - "lastsaas/internal/planstore/**"
-    - "lastsaas/internal/api/handlers/**"
+    - "backend/cmd/**"
+    - "backend/internal/db/**"
+    - "backend/internal/testutil/**"
+    - "backend/internal/configstore/**"
+    - "backend/internal/email/**"
+    - "backend/internal/health/**"
+    - "backend/internal/metrics/**"
+    - "backend/internal/planstore/**"
+    - "backend/internal/api/handlers/**"
