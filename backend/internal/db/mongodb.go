@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -41,7 +42,9 @@ func NewMongoDB(uri, database string) (*MongoDB, error) {
 	}
 
 	db.ensureIndexes()
-	db.EnsureSchemaValidation()
+	if os.Getenv("LASTSAAS_ENV") != "test" {
+		db.EnsureSchemaValidation()
+	}
 
 	return db, nil
 }
