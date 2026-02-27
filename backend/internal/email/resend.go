@@ -157,24 +157,24 @@ func (s *ResendService) SendVerificationEmail(to, displayName, token string) err
 	subject := s.executeTemplate("email.verification.subject", data,
 		fmt.Sprintf("Verify your %s account", appName))
 
-	fallbackBody := fmt.Sprintf(`<!DOCTYPE html>
+	fallbackBody := `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 40px 20px;">
     <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 40px;">
-        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">%s</h1>
+        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">{{.AppName}}</h1>
         <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
         <h2 style="color: #1e293b; margin-bottom: 16px;">Verify Your Email</h2>
-        <p style="color: #475569; line-height: 1.6;">Hi %s,</p>
+        <p style="color: #475569; line-height: 1.6;">Hi {{.DisplayName}},</p>
         <p style="color: #475569; line-height: 1.6;">Thanks for signing up! Please verify your email address by clicking the button below:</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="%s" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Verify Email Address</a>
+            <a href="{{.VerifyURL}}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Verify Email Address</a>
         </div>
         <p style="color: #94a3b8; font-size: 14px;">If you didn't create an account, you can safely ignore this email.</p>
         <p style="color: #94a3b8; font-size: 14px;">This link will expire in 24 hours.</p>
     </div>
 </body>
-</html>`, appName, displayName, verifyURL)
+</html>`
 
 	html := s.executeTemplate("email.verification.body", data, fallbackBody)
 
@@ -194,24 +194,24 @@ func (s *ResendService) SendPasswordResetEmail(to, displayName, token string) er
 	subject := s.executeTemplate("email.password_reset.subject", data,
 		fmt.Sprintf("Reset your %s password", appName))
 
-	fallbackBody := fmt.Sprintf(`<!DOCTYPE html>
+	fallbackBody := `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 40px 20px;">
     <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 40px;">
-        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">%s</h1>
+        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">{{.AppName}}</h1>
         <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
         <h2 style="color: #1e293b; margin-bottom: 16px;">Reset Your Password</h2>
-        <p style="color: #475569; line-height: 1.6;">Hi %s,</p>
+        <p style="color: #475569; line-height: 1.6;">Hi {{.DisplayName}},</p>
         <p style="color: #475569; line-height: 1.6;">We received a request to reset your password. Click the button below to choose a new password:</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="%s" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Reset Password</a>
+            <a href="{{.ResetURL}}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Reset Password</a>
         </div>
         <p style="color: #94a3b8; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email.</p>
         <p style="color: #94a3b8; font-size: 14px;">This link will expire in 1 hour.</p>
     </div>
 </body>
-</html>`, appName, displayName, resetURL)
+</html>`
 
 	html := s.executeTemplate("email.password_reset.body", data, fallbackBody)
 
@@ -231,24 +231,24 @@ func (s *ResendService) SendMagicLinkEmail(to, displayName, token string) error 
 	subject := s.executeTemplate("email.magic_link.subject", data,
 		fmt.Sprintf("Sign in to %s", appName))
 
-	fallbackBody := fmt.Sprintf(`<!DOCTYPE html>
+	fallbackBody := `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 40px 20px;">
     <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 40px;">
-        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">%s</h1>
+        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">{{.AppName}}</h1>
         <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
         <h2 style="color: #1e293b; margin-bottom: 16px;">Sign In</h2>
-        <p style="color: #475569; line-height: 1.6;">Hi %s,</p>
+        <p style="color: #475569; line-height: 1.6;">Hi {{.DisplayName}},</p>
         <p style="color: #475569; line-height: 1.6;">Click the button below to sign in to your account:</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="%s" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Sign In</a>
+            <a href="{{.MagicLinkURL}}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Sign In</a>
         </div>
         <p style="color: #94a3b8; font-size: 14px;">If you didn't request this link, you can safely ignore this email.</p>
         <p style="color: #94a3b8; font-size: 14px;">This link will expire in 15 minutes.</p>
     </div>
 </body>
-</html>`, appName, displayName, magicLinkURL)
+</html>`
 
 	html := s.executeTemplate("email.magic_link.body", data, fallbackBody)
 
@@ -269,22 +269,22 @@ func (s *ResendService) SendInvitationEmail(to, inviterName, tenantName, token s
 	subject := s.executeTemplate("email.invitation.subject", data,
 		fmt.Sprintf("You've been invited to %s", tenantName))
 
-	fallbackBody := fmt.Sprintf(`<!DOCTYPE html>
+	fallbackBody := `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 40px 20px;">
     <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 40px;">
-        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">%s</h1>
+        <h1 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">{{.AppName}}</h1>
         <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
         <h2 style="color: #1e293b; margin-bottom: 16px;">You've Been Invited</h2>
-        <p style="color: #475569; line-height: 1.6;">%s has invited you to join <strong>%s</strong>.</p>
+        <p style="color: #475569; line-height: 1.6;">{{.InviterName}} has invited you to join <strong>{{.TenantName}}</strong>.</p>
         <div style="text-align: center; margin: 30px 0;">
-            <a href="%s" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Accept Invitation</a>
+            <a href="{{.InviteURL}}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 16px;">Accept Invitation</a>
         </div>
         <p style="color: #94a3b8; font-size: 14px;">This invitation will expire in 7 days.</p>
     </div>
 </body>
-</html>`, appName, inviterName, tenantName, inviteURL)
+</html>`
 
 	html := s.executeTemplate("email.invitation.body", data, fallbackBody)
 
