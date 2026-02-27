@@ -72,6 +72,16 @@ func TestLoadTestConfig(t *testing.T) {
 
 func TestLoadDevConfig(t *testing.T) {
 	setupTestEnv(t)
+
+	// dev.yaml is gitignored — skip in CI where it doesn't exist
+	configDir := os.Getenv("LASTSAAS_CONFIG_DIR")
+	if configDir == "" {
+		configDir = filepath.Join("..", "..", "config")
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "dev.yaml")); os.IsNotExist(err) {
+		t.Skip("skipping: dev.yaml not present (gitignored)")
+	}
+
 	os.Setenv("SERVER_PORT", "4290")
 	os.Setenv("FRONTEND_URL", "http://localhost:4280")
 	defer os.Unsetenv("SERVER_PORT")
