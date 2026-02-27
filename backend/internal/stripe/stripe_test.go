@@ -412,6 +412,202 @@ func TestGetCheckoutSession(t *testing.T) {
 	}
 }
 
+func TestGetOrCreatePriceExistingMapping(t *testing.T) {
+	database, cleanup := testutil.MustConnectTestDB(t)
+	defer cleanup()
+	testutil.CleanupCollections(t, database)
+
+	svc := New("sk_test", "pk_test", "whsec_test", database, "http://localhost:4280")
+
+	// Insert a pre-existing mapping
+	entityID := primitive.NewObjectID()
+	database.StripeMappings().InsertOne(t.Context(), models.StripeMapping{
+		EntityType:    "plan_month",
+		EntityID:      entityID,
+		StripePriceID: "price_existing",
+	})
+
+	priceID, err := svc.GetOrCreatePrice(t.Context(), "plan_month", entityID, "Pro Plan", 1999, "month", "usd")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if priceID != "price_existing" {
+		t.Errorf("expected price_existing, got %q", priceID)
+	}
+}
+
+func TestGetOrCreatePriceDefaultCurrency(t *testing.T) {
+	database, cleanup := testutil.MustConnectTestDB(t)
+	defer cleanup()
+	testutil.CleanupCollections(t, database)
+
+	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/products":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     "prod_new",
+				"object": "product",
+			})
+		case r.URL.Path == "/v1/prices":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     "price_new",
+				"object": "price",
+			})
+		}
+	})
+	defer mockCleanup()
+	_ = mock
+
+	svc := New("sk_test", "pk_test", "whsec_test", database, "http://localhost:4280")
+
+	// Empty currency should default to "usd"
+	entityID := primitive.NewObjectID()
+	priceID, err := svc.GetOrCreatePrice(t.Context(), "bundle", entityID, "Bundle", 500, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if priceID != "price_new" {
+		t.Errorf("expected price_new, got %q", priceID)
+	}
+}
+
+func TestUpdateSubscriptionQuantity(t *testing.T) {
+	requestCount := 0
+	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		requestCount++
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "sub_seat",
+			"object": "subscription",
+			"status": "active",
+			"items": map[string]interface{}{
+				"object": "list",
+				"data": []map[string]interface{}{
+					{
+						"id":     "si_item1",
+						"object": "subscription_item",
+					},
+				},
+			},
+		})
+	})
+	defer mockCleanup()
+	_ = mock
+
+	svc := New("sk_test", "pk_test", "whsec_test", nil, "http://localhost")
+
+	err := svc.UpdateSubscriptionQuantity(t.Context(), "sub_seat", 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should have made 2 calls: Get + Update
+	if requestCount < 2 {
+		t.Errorf("expected at least 2 API calls, got %d", requestCount)
+	}
+}
+
+func TestUpdateSubscriptionQuantityNoItems(t *testing.T) {
+	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "sub_empty",
+			"object": "subscription",
+			"status": "active",
+			"items": map[string]interface{}{
+				"object": "list",
+				"data":   []map[string]interface{}{},
+			},
+		})
+	})
+	defer mockCleanup()
+	_ = mock
+
+	svc := New("sk_test", "pk_test", "whsec_test", nil, "http://localhost")
+
+	err := svc.UpdateSubscriptionQuantity(t.Context(), "sub_empty", 5)
+	if err == nil {
+		t.Fatal("expected error for subscription with no items")
+	}
+}
+
+func TestCancelSubscriptionAtPeriodEndNoItems(t *testing.T) {
+	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":        "sub_nope",
+			"object":    "subscription",
+			"cancel_at": 0,
+			"items": map[string]interface{}{
+				"object": "list",
+				"data":   []map[string]interface{}{},
+			},
+		})
+	})
+	defer mockCleanup()
+	_ = mock
+
+	svc := New("sk_test", "pk_test", "whsec_test", nil, "http://localhost")
+
+	periodEnd, err := svc.CancelSubscriptionAtPeriodEnd(t.Context(), "sub_nope")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if periodEnd != nil {
+		t.Error("expected nil period end when no items and no cancel_at")
+	}
+}
+
+func TestCreateCheckoutSessionWithQuantity(t *testing.T) {
+	database, cleanup := testutil.MustConnectTestDB(t)
+	defer cleanup()
+	testutil.CleanupCollections(t, database)
+
+	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/products":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     "prod_seat",
+				"object": "product",
+			})
+		case r.URL.Path == "/v1/prices":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     "price_seat",
+				"object": "price",
+			})
+		case r.URL.Path == "/v1/checkout/sessions":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     "cs_seat",
+				"object": "checkout.session",
+				"url":    "https://checkout.stripe.com/pay/cs_seat",
+			})
+		}
+	})
+	defer mockCleanup()
+	_ = mock
+
+	planID := primitive.NewObjectID()
+	svc := New("sk_test", "pk_test", "whsec_test", database, "http://localhost:4280")
+
+	url, err := svc.CreateCheckoutSession(t.Context(), CheckoutRequest{
+		CustomerID:      "cus_123",
+		PlanID:          &planID,
+		PlanName:        "Team Plan",
+		AmountCents:     999,
+		BillingInterval: "month",
+		TenantID:        "tenant_123",
+		UserID:          "user_123",
+		Quantity:        5,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if url == "" {
+		t.Error("expected non-empty checkout URL")
+	}
+}
+
 func TestGetSubscription(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
