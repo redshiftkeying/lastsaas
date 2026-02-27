@@ -198,3 +198,165 @@ func TestValidatePortRange(t *testing.T) {
 		t.Fatal("expected validation error for invalid port")
 	}
 }
+
+func TestValidatePortZero(t *testing.T) {
+	cfg := &Config{
+		Database: DatabaseConfig{URI: "mongodb://localhost", Name: "test"},
+		JWT:      JWTConfig{AccessSecret: "test-access-secret-minimum16chars", RefreshSecret: "test-refresh-secret-minimum16chars"},
+		Server:   ServerConfig{Port: 0},
+		Frontend: FrontendConfig{URL: "http://localhost"},
+	}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("expected validation error for port 0")
+	}
+}
+
+func TestValidateValid(t *testing.T) {
+	cfg := &Config{
+		Database: DatabaseConfig{URI: "mongodb://localhost", Name: "test"},
+		JWT:      JWTConfig{AccessSecret: "test-access-secret-minimum16chars", RefreshSecret: "test-refresh-secret-minimum16chars"},
+		Server:   ServerConfig{Port: 8080},
+		Frontend: FrontendConfig{URL: "http://localhost:3000"},
+	}
+	err := cfg.validate()
+	if err != nil {
+		t.Fatalf("expected no error for valid config, got: %v", err)
+	}
+}
+
+func TestValidateMissingJWTAccessSecret(t *testing.T) {
+	cfg := &Config{
+		Database: DatabaseConfig{URI: "mongodb://localhost", Name: "test"},
+		JWT:      JWTConfig{AccessSecret: "", RefreshSecret: "test-refresh-secret-minimum16chars"},
+		Server:   ServerConfig{Port: 8080},
+		Frontend: FrontendConfig{URL: "http://localhost"},
+	}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("expected validation error for missing JWT access secret")
+	}
+}
+
+func TestValidateMissingFrontendURL(t *testing.T) {
+	cfg := &Config{
+		Database: DatabaseConfig{URI: "mongodb://localhost", Name: "test"},
+		JWT:      JWTConfig{AccessSecret: "test-access-secret-minimum16chars", RefreshSecret: "test-refresh-secret-minimum16chars"},
+		Server:   ServerConfig{Port: 8080},
+		Frontend: FrontendConfig{URL: ""},
+	}
+	err := cfg.validate()
+	if err == nil {
+		t.Fatal("expected validation error for missing frontend URL")
+	}
+}
+
+func TestExpandEnvVarsMultiple(t *testing.T) {
+	os.Setenv("CONFIG_HOST", "dbhost")
+	os.Setenv("CONFIG_PORT", "27017")
+	defer os.Unsetenv("CONFIG_HOST")
+	defer os.Unsetenv("CONFIG_PORT")
+
+	result := expandEnvVars("mongodb://${CONFIG_HOST}:${CONFIG_PORT}")
+	if result != "mongodb://dbhost:27017" {
+		t.Errorf("expected 'mongodb://dbhost:27017', got %q", result)
+	}
+}
+
+func TestExpandEnvVarsNoVars(t *testing.T) {
+	result := expandEnvVars("plain-string-no-vars")
+	if result != "plain-string-no-vars" {
+		t.Errorf("expected unchanged string, got %q", result)
+	}
+}
+
+func TestLoadEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	envContent := "TEST_LOADENV_KEY=loadenv_value\n# comment line\n\nTEST_LOADENV_KEY2=value2\n"
+	os.WriteFile(filepath.Join(dir, ".env"), []byte(envContent), 0644)
+
+	// Save and restore working directory
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	os.Chdir(dir)
+
+	// Clear any existing values
+	os.Unsetenv("TEST_LOADENV_KEY")
+	os.Unsetenv("TEST_LOADENV_KEY2")
+
+	LoadEnvFile()
+
+	val := os.Getenv("TEST_LOADENV_KEY")
+	if val != "loadenv_value" {
+		t.Errorf("expected 'loadenv_value', got %q", val)
+	}
+	val2 := os.Getenv("TEST_LOADENV_KEY2")
+	if val2 != "value2" {
+		t.Errorf("expected 'value2', got %q", val2)
+	}
+
+	// Clean up
+	os.Unsetenv("TEST_LOADENV_KEY")
+	os.Unsetenv("TEST_LOADENV_KEY2")
+}
+
+func TestLoadEnvFileDoesNotOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	envContent := "TEST_NOOVERWRITE=file_value\n"
+	os.WriteFile(filepath.Join(dir, ".env"), []byte(envContent), 0644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	os.Chdir(dir)
+
+	// Set existing value
+	os.Setenv("TEST_NOOVERWRITE", "existing_value")
+	defer os.Unsetenv("TEST_NOOVERWRITE")
+
+	LoadEnvFile()
+
+	val := os.Getenv("TEST_NOOVERWRITE")
+	if val != "existing_value" {
+		t.Errorf("expected 'existing_value' (not overwritten), got %q", val)
+	}
+}
+
+func TestLoadEnvFileNoFile(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	os.Chdir(dir)
+
+	// Should not panic when no .env file exists
+	LoadEnvFile()
+}
+
+func TestLoadCustomConfigDir(t *testing.T) {
+	dir := t.TempDir()
+	configContent := `server:
+  port: 9999
+database:
+  uri: mongodb://localhost
+  name: custom-db
+jwt:
+  access_secret: custom-access-secret-minimum16chars
+  refresh_secret: custom-refresh-secret-minimum16chars
+frontend:
+  url: http://localhost:9000
+`
+	os.WriteFile(filepath.Join(dir, "custom.yaml"), []byte(configContent), 0644)
+
+	os.Setenv("LASTSAAS_CONFIG_DIR", dir)
+	defer os.Unsetenv("LASTSAAS_CONFIG_DIR")
+
+	cfg, err := Load("custom")
+	if err != nil {
+		t.Fatalf("failed to load custom config: %v", err)
+	}
+	if cfg.Server.Port != 9999 {
+		t.Errorf("expected port 9999, got %d", cfg.Server.Port)
+	}
+	if cfg.Database.Name != "custom-db" {
+		t.Errorf("expected 'custom-db', got %q", cfg.Database.Name)
+	}
+}

@@ -59,6 +59,12 @@ func MustConnectTestDB(t *testing.T) (*db.MongoDB, func()) {
 	os.Setenv("LASTSAAS_ENV", "test")
 	SetConfigDir(t)
 
+	// Skip gracefully when no MongoDB URI is configured (e.g. in CI without .env.test)
+	uri := os.Getenv("MONGODB_URI")
+	if uri == "" {
+		t.Skip("skipping: MONGODB_URI not set (no .env.test file)")
+	}
+
 	cfg, err := config.Load("test")
 	if err != nil {
 		t.Fatalf("testutil: failed to load test config: %v", err)

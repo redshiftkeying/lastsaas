@@ -1,5 +1,9 @@
 # LastSaaS
 
+[![CI](https://github.com/jonradoff/lastsaas/actions/workflows/ci.yml/badge.svg)](https://github.com/jonradoff/lastsaas/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/jonradoff/lastsaas/branch/master/graph/badge.svg)](https://codecov.io/gh/jonradoff/lastsaas)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jonradoff/lastsaas)](https://goreportcard.com/report/github.com/jonradoff/lastsaas)
+
 **The last SaaS boilerplate you'll ever need.**
 
 LastSaaS is a complete, production-ready SaaS foundation built entirely through conversation with [Claude Code](https://claude.ai/claude-code). It gives you multi-tenant account management, authentication, role-based access control, white-label branding, Stripe billing, API keys, outgoing webhooks, a full admin interface, system health monitoring, and credit-based usage tracking — everything you need to launch a SaaS business, ready to customize for your specific product.

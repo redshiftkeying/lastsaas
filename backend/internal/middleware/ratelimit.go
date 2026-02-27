@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -209,6 +210,21 @@ func GetClientIP(r *http.Request) string {
 	if flyIP := r.Header.Get("Fly-Client-IP"); flyIP != "" {
 		if net.ParseIP(flyIP) != nil {
 			return flyIP
+		}
+	}
+
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		if net.ParseIP(strings.TrimSpace(realIP)) != nil {
+			return strings.TrimSpace(realIP)
+		}
+	}
+
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Use the first (leftmost) IP — that's the original client
+		parts := strings.SplitN(xff, ",", 2)
+		ip := strings.TrimSpace(parts[0])
+		if net.ParseIP(ip) != nil {
+			return ip
 		}
 	}
 
