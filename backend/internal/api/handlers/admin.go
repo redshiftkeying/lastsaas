@@ -80,15 +80,6 @@ func (h *AdminHandler) SetEmailService(svc *email.ResendService) {
 	h.emailService = svc
 }
 
-var regexMetaChars = strings.NewReplacer(
-	`\`, `\\`, `.`, `\.`, `+`, `\+`, `*`, `\*`, `?`, `\?`,
-	`(`, `\(`, `)`, `\)`, `[`, `\[`, `]`, `\]`, `{`, `\{`, `}`, `\}`,
-	`^`, `\^`, `$`, `\$`, `|`, `\|`,
-)
-
-func escapeRegex(s string) string {
-	return regexMetaChars.Replace(s)
-}
 
 type TenantListItem struct {
 	ID                  string    `json:"id"`
@@ -134,7 +125,7 @@ func (h *AdminHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 	// Search filter
 	filter := bson.M{}
 	if search := strings.TrimSpace(q.Get("search")); search != "" {
-		escaped := primitive.Regex{Pattern: "(?i)" + escapeRegex(search)}
+		escaped := primitive.Regex{Pattern: "(?i)" + escapeRegexInput(search)}
 		filter["$or"] = []bson.M{
 			{"name": bson.M{"$regex": escaped.Pattern}},
 			{"slug": bson.M{"$regex": escaped.Pattern}},
@@ -284,7 +275,7 @@ func (h *AdminHandler) ExportTenantsCSV(w http.ResponseWriter, r *http.Request) 
 
 	filter := bson.M{}
 	if search := strings.TrimSpace(q.Get("search")); search != "" {
-		escaped := primitive.Regex{Pattern: "(?i)" + escapeRegex(search)}
+		escaped := primitive.Regex{Pattern: "(?i)" + escapeRegexInput(search)}
 		filter["$or"] = []bson.M{
 			{"name": bson.M{"$regex": escaped.Pattern}},
 			{"slug": bson.M{"$regex": escaped.Pattern}},
@@ -526,7 +517,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	// Search filter
 	filter := bson.M{}
 	if search := strings.TrimSpace(q.Get("search")); search != "" {
-		escaped := escapeRegex(search)
+		escaped := escapeRegexInput(search)
 		filter["$or"] = []bson.M{
 			{"email": bson.M{"$regex": "(?i)" + escaped}},
 			{"displayName": bson.M{"$regex": "(?i)" + escaped}},
@@ -646,7 +637,7 @@ func (h *AdminHandler) ExportUsersCSV(w http.ResponseWriter, r *http.Request) {
 
 	filter := bson.M{}
 	if search := strings.TrimSpace(q.Get("search")); search != "" {
-		escaped := escapeRegex(search)
+		escaped := escapeRegexInput(search)
 		filter["$or"] = []bson.M{
 			{"email": bson.M{"$regex": "(?i)" + escaped}},
 			{"displayName": bson.M{"$regex": "(?i)" + escaped}},

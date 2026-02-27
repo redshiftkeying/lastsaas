@@ -41,7 +41,7 @@ func (h *UsageHandler) RecordUsage(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Type     string                 `json:"type"`
 		Quantity int                    `json:"quantity"`
-		Metadata map[string]interface{} `json:"metadata"`
+		Metadata map[string]string `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)

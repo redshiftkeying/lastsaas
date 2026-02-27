@@ -549,6 +549,12 @@ func usageEventsSchema() CollectionSchema {
 						"bsonType": "int",
 						"minimum":  1,
 					},
+					"metadata": bson.M{
+						"bsonType": "object",
+						"additionalProperties": bson.M{
+							"bsonType": "string",
+						},
+					},
 					"createdAt": bson.M{
 						"bsonType": "date",
 					},

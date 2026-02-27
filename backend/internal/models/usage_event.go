@@ -12,6 +12,6 @@ type UsageEvent struct {
 	UserID    primitive.ObjectID     `json:"userId" bson:"userId" validate:"required"`
 	Type      string                 `json:"type" bson:"type" validate:"required,min=1,max=100"`
 	Quantity  int                    `json:"quantity" bson:"quantity" validate:"required,gte=1"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty" bson:"metadata,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty" bson:"metadata,omitempty"`
 	CreatedAt time.Time              `json:"createdAt" bson:"createdAt" validate:"required"`
 }
