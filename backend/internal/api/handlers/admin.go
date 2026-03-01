@@ -5,7 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1752,7 +1752,7 @@ func (h *AdminHandler) InviteRootMember(w http.ResponseWriter, r *http.Request) 
 		_ = ctx // timeout guard for background goroutine
 		if h.emailService != nil {
 			if err := h.emailService.SendInvitationEmail(req.Email, user.DisplayName, rootTenant.Name, token); err != nil {
-				log.Printf("Failed to send root member invitation email to %s: %v", req.Email, err)
+				slog.Error("Failed to send root member invitation email", "to", req.Email, "error", err)
 			}
 		}
 	}()

@@ -6,7 +6,7 @@
 
 **The last SaaS boilerplate you'll ever need.**
 
-LastSaaS is a complete, production-ready SaaS foundation built entirely through conversation with [Claude Code](https://claude.ai/claude-code). It gives you multi-tenant account management, authentication, role-based access control, white-label branding, Stripe billing, API keys, outgoing webhooks, a full admin interface, system health monitoring, and credit-based usage tracking — everything you need to launch a SaaS business, ready to customize for your specific product.
+LastSaaS is a complete, production-ready SaaS foundation built entirely through conversation with [Claude Code](https://claude.ai/claude-code). It gives you multi-tenant account management, authentication, role-based access control, white-label branding, Stripe billing, API keys, outgoing webhooks, a full admin interface, system health monitoring, credit-based usage tracking, and product analytics with telemetry — everything you need to launch a SaaS business, ready to customize for your specific product.
 
 The bottleneck for building software isn't engineering capacity anymore — it's imagination. LastSaaS proves it: a single person with a clear vision and an AI agent can stand up what used to require a team and months of work. And because it was built with [Claude Code](https://claude.ai/claude-code), the codebase is fork-ready for agentic engineering — point an AI agent at it and keep building your product through conversation.
 
@@ -34,6 +34,8 @@ LastSaaS eliminates that. Fork it, point an AI agent at it, and start building y
 - Outgoing webhooks with 19 event types and HMAC-SHA256 signing
 - Credit-based usage tracking (subscription + purchased buckets)
 - Promotion codes and coupon management via Stripe
+- Product analytics dashboard (conversion funnel, KPIs, retention cohorts, engagement metrics)
+- Telemetry event system with Go SDK and REST API for custom event tracking
 - A full admin interface for managing everything
 - Built-in API documentation (HTML and Markdown)
 - Real-time system health monitoring
@@ -65,6 +67,8 @@ If you're evaluating SaaS boilerplates, you've probably looked at ShipFast, Supa
 
 **Health monitoring and financial dashboards.** No competing boilerplate includes system health monitoring. LastSaaS collects CPU, memory, disk, HTTP, and MongoDB metrics every 60 seconds across all nodes, with 8 real-time charts, threshold alerting, and 30-day retention. The financial dashboard gives you revenue, ARR, DAU, and MAU time-series out of the box.
 
+**Product analytics with telemetry.** No competing boilerplate includes product analytics. LastSaaS auto-instruments the customer journey — visitor → signup → plan page → checkout → paid conversion → upgrade — and visualizes it as a conversion funnel. The PM dashboard includes SaaS KPIs (MRR, ARR, ARPU, LTV, churn rate, trial conversion), retention cohort analysis, engagement metrics (DAU/WAU/MAU for paying subscribers), and a custom event explorer. A Go SDK and REST API let you track your own events with zero configuration.
+
 **MCP server for AI-native operations.** This is unique to LastSaaS. A built-in Model Context Protocol server with 26 read-only tools lets you connect Claude (or any MCP-compatible AI) directly to your running application. Query your ARR trend, investigate error spikes, audit API keys, or review system health — all in natural language. No other SaaS boilerplate offers agentic admin access.
 
 **Built for AI-assisted development.** LastSaaS was built entirely through conversation with Claude Code, and the codebase is designed to keep being built that way. Consistent patterns, clear naming, and a structure AI agents navigate fluently. Fork it, point an agent at it, describe your product, and keep going. The competing boilerplates were built for manual development — LastSaaS is built for the way software is made now.
@@ -78,6 +82,7 @@ If you're evaluating SaaS boilerplates, you've probably looked at ShipFast, Supa
 | **Webhooks** | 19 events | — | — | — | — | — |
 | **API Keys** | Scoped | — | — | — | Basic | — |
 | **Health Monitoring** | 8 charts | — | — | — | — | — |
+| **Product Analytics** | 5-tab PM dashboard | — | — | — | — | — |
 | **Credit System** | Dual buckets | — | — | Basic | — | — |
 | **MCP Server** | 26 tools | — | — | — | — | — |
 | **Admin Dashboard** | Full | — | ✓ | ✓ | ✓ | Basic |
@@ -171,6 +176,7 @@ If you're evaluating SaaS boilerplates, you've probably looked at ShipFast, Supa
 - **User management** — list, search, view profiles, edit, suspend, impersonate, delete with ownership preflight
 - **Tenant management** — list, view, edit, plan assignment, status control, subscription management
 - **Financial overview** — transaction history across all tenants, revenue/ARR/DAU/MAU charts
+- **Product analytics** — conversion funnel, SaaS KPIs, retention cohorts, engagement metrics, custom event explorer
 - **Plan management** — create, edit, archive, entitlements, per-seat configuration, trial days
 - **Credit bundle management** — create, edit, sort, activate/deactivate
 - **Promotions** — create and manage Stripe promotion codes and coupons
@@ -198,6 +204,18 @@ If you're evaluating SaaS boilerplates, you've probably looked at ShipFast, Supa
 - Aggregate, all-nodes overlay, and single-node filter modes
 - Time range selection: 1h, 6h, 24h, 7d, 30d
 - Integration health panel (MongoDB, Stripe, Resend, Google OAuth connectivity)
+
+### Product Analytics & Telemetry
+- **Conversion funnel** — Visitors → Signups → Plan Page Views → Checkouts → Paid Conversions → Upgrades, with conversion rates at each step
+- **SaaS KPIs** — MRR, ARR, ARPU, LTV, churn rate, trial-to-paid conversion rate, median time to first purchase, active subscriber count
+- **Retention cohorts** — weekly or monthly cohort retention table with color-coded heatmap (tracks `lastLoginAt` over time)
+- **Engagement metrics** — DAU/WAU/MAU for paying subscribers, average sessions per user, top features by usage, credit consumption trend
+- **Custom event explorer** — browse all event types, view trend charts, filter by name and time range
+- **Telemetry Go SDK** — `telemetry.Track()` / `TrackBatch()` / `TrackPageView()` / `TrackCheckoutStarted()` / `TrackLogin()` for direct in-process event recording (no HTTP overhead)
+- **Telemetry REST API** — `POST /telemetry/track` (anonymous, rate-limited) for page views; `POST /telemetry/events` and `/telemetry/events/batch` (authenticated) for custom events
+- **Auto-instrumentation** — registration, email verification, login, checkout, subscription activation/cancellation, and plan changes are tracked automatically
+- **365-day retention** — telemetry events auto-expire via MongoDB TTL index
+- **Rate limiting** — 60 req/min per IP for anonymous tracking, 120 req/min per user for authenticated events
 
 ### User Self-Service
 - Profile editing (display name, email)
@@ -490,6 +508,7 @@ lastsaas/
       planstore/                  Plan seeding
       stripe/                     Stripe service (Checkout, Billing Portal, Customers, Prices, Subscriptions)
       syslog/                     System logging service with injection detection
+      telemetry/                  Telemetry event collection, Go SDK, and PM analytics queries
       version/                    Version management and auto-migration
   frontend/
     src/
@@ -870,6 +889,7 @@ Here's what's already wired up for you:
 9. **Use the event emitter** — emit events from your handlers and they'll automatically be delivered to configured webhooks
 10. **Use API keys** — your endpoints automatically support both JWT and API key authentication
 11. **Use the branding system** — your UI inherits the white-label theme automatically via the BrandingContext
+12. **Use the telemetry system** — track custom events with `telemetry.Track()` in Go or `POST /telemetry/events` from external clients, and they'll automatically appear in the PM dashboard
 
 ---
 

@@ -1,22 +1,90 @@
 package auth
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
 
-type TOTPService struct{}
+const totpEncPrefix = "enc:"
+
+type TOTPService struct {
+	encryptionKey []byte // AES-256 key for encrypting TOTP secrets at rest (nil = plaintext)
+}
 
 func NewTOTPService() *TOTPService {
 	return &TOTPService{}
+}
+
+// NewTOTPServiceWithEncryption creates a TOTPService that encrypts secrets at rest.
+func NewTOTPServiceWithEncryption(key []byte) *TOTPService {
+	return &TOTPService{encryptionKey: key}
+}
+
+// EncryptSecret encrypts a TOTP secret for storage. Returns as-is if no key is configured.
+func (s *TOTPService) EncryptSecret(secret string) (string, error) {
+	if s.encryptionKey == nil || len(s.encryptionKey) != 32 {
+		return secret, nil
+	}
+
+	block, err := aes.NewCipher(s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("create cipher: %w", err)
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("create GCM: %w", err)
+	}
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("generate nonce: %w", err)
+	}
+	ciphertext := aesGCM.Seal(nonce, nonce, []byte(secret), nil)
+	return totpEncPrefix + base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+// DecryptSecret decrypts a TOTP secret from storage. Handles plaintext (legacy) secrets transparently.
+func (s *TOTPService) DecryptSecret(stored string) string {
+	if !strings.HasPrefix(stored, totpEncPrefix) {
+		return stored // plaintext legacy secret
+	}
+	if s.encryptionKey == nil || len(s.encryptionKey) != 32 {
+		return stored // encrypted but no key — return as-is (will fail validation)
+	}
+
+	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, totpEncPrefix))
+	if err != nil {
+		return stored
+	}
+	block, err := aes.NewCipher(s.encryptionKey)
+	if err != nil {
+		return stored
+	}
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return stored
+	}
+	nonceSize := aesGCM.NonceSize()
+	if len(data) < nonceSize {
+		return stored
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return stored // decryption failed — may be corrupted
+	}
+	return string(plaintext)
 }
 
 func (s *TOTPService) GenerateSecret(issuer, email string) (*otp.Key, error) {

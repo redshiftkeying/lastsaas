@@ -2,7 +2,7 @@ package version
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"lastsaas/internal/db"
@@ -17,7 +17,7 @@ import (
 // to the root tenant owner.
 func CheckAndMigrate(database *db.MongoDB) {
 	if Current == "" || Current == "unknown" {
-		log.Println("Warning: VERSION file not found, skipping version check")
+		slog.Warn("VERSION file not found, skipping version check")
 		return
 	}
 
@@ -32,12 +32,12 @@ func CheckAndMigrate(database *db.MongoDB) {
 	}
 
 	if sys.Version == Current {
-		log.Printf("Version %s (up to date)", Current)
+		slog.Info("Version up to date", "version", Current)
 		return
 	}
 
 	oldVersion := sys.Version
-	log.Printf("Version changed: %s -> %s", oldVersion, Current)
+	slog.Info("Version changed", "from", oldVersion, "to", Current)
 
 	// Run migrations (placeholder for future use)
 	runMigrations(database, oldVersion, Current)
@@ -50,20 +50,20 @@ func CheckAndMigrate(database *db.MongoDB) {
 		bson.M{"_id": sys.ID},
 		bson.M{"$set": bson.M{"version": Current}},
 	)
-	log.Printf("Database version updated to %s", Current)
+	slog.Info("Database version updated", "version", Current)
 }
 
 func runMigrations(database *db.MongoDB, from, to string) {
 	// Placeholder: future migrations will be dispatched here
 	// based on version comparison.
-	log.Printf("Migrations: %s -> %s (none registered)", from, to)
+	slog.Info("Migrations: none registered", "from", from, "to", to)
 }
 
 func sendUpgradeMessage(ctx context.Context, database *db.MongoDB, newVersion string) {
 	var rootTenant models.Tenant
 	err := database.Tenants().FindOne(ctx, bson.M{"isRoot": true}).Decode(&rootTenant)
 	if err != nil {
-		log.Printf("Warning: could not find root tenant for upgrade message: %v", err)
+		slog.Warn("Could not find root tenant for upgrade message", "error", err)
 		return
 	}
 
@@ -73,7 +73,7 @@ func sendUpgradeMessage(ctx context.Context, database *db.MongoDB, newVersion st
 		"role":     "owner",
 	}).Decode(&membership)
 	if err != nil {
-		log.Printf("Warning: could not find root tenant owner for upgrade message: %v", err)
+		slog.Warn("Could not find root tenant owner for upgrade message", "error", err)
 		return
 	}
 
@@ -88,6 +88,6 @@ func sendUpgradeMessage(ctx context.Context, database *db.MongoDB, newVersion st
 	}
 
 	if _, err := database.Messages().InsertOne(ctx, msg); err != nil {
-		log.Printf("Warning: failed to send upgrade message: %v", err)
+		slog.Warn("Failed to send upgrade message", "error", err)
 	}
 }

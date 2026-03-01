@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -89,7 +89,7 @@ func (h *PromotionsHandler) ListPromotions(w http.ResponseWriter, r *http.Reques
 		promos = append(promos, p)
 	}
 	if err := iter.Err(); err != nil {
-		log.Printf("Promotions: list error: %v", err)
+		slog.Error("Promotions: list error", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to list promotion codes")
 		return
 	}
@@ -287,7 +287,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 
 			productIDs, err := h.resolveStripeProducts(ctx, item.Type, objID, currency)
 			if err != nil {
-				log.Printf("Failed to resolve Stripe product for %s/%s: %v", item.Type, item.ID, err)
+				slog.Warn("Failed to resolve Stripe product", "type", item.Type, "id", item.ID, "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to resolve Stripe product")
 				return
 			}
@@ -323,7 +323,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 	c, err := coupon.New(couponParams)
 	apicounter.StripeAPICalls.Add(1)
 	if err != nil {
-		log.Printf("Promotions: coupon create error: %v", err)
+		slog.Error("Promotions: coupon create error", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to create coupon")
 		return
 	}
@@ -352,7 +352,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 	pc, err := promotioncode.New(promoParams)
 	apicounter.StripeAPICalls.Add(1)
 	if err != nil {
-		log.Printf("Promotions: promo code create error: %v", err)
+		slog.Error("Promotions: promo code create error", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to create promotion code")
 		return
 	}
@@ -466,7 +466,7 @@ func (h *PromotionsHandler) UpdatePromotion(w http.ResponseWriter, r *http.Reque
 		})
 		apicounter.StripeAPICalls.Add(1)
 		if err != nil {
-			log.Printf("Promotions: coupon update error: %v", err)
+			slog.Error("Promotions: coupon update error", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to update coupon name")
 			return
 		}
@@ -479,7 +479,7 @@ func (h *PromotionsHandler) UpdatePromotion(w http.ResponseWriter, r *http.Reque
 		})
 		apicounter.StripeAPICalls.Add(1)
 		if err != nil {
-			log.Printf("Promotions: promo code update error: %v", err)
+			slog.Error("Promotions: promo code update error", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to update promotion code")
 			return
 		}
@@ -507,7 +507,7 @@ func (h *PromotionsHandler) DeactivatePromotion(w http.ResponseWriter, r *http.R
 	})
 	apicounter.StripeAPICalls.Add(1)
 	if err != nil {
-		log.Printf("Promotions: deactivate error: %v", err)
+		slog.Error("Promotions: deactivate error", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to deactivate promotion code")
 		return
 	}

@@ -2,7 +2,7 @@ package health
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -59,7 +59,7 @@ func (s *Service) Start() {
 	go s.heartbeatLoop()
 	go s.collectorLoop()
 	go s.integrationCheckLoop()
-	log.Printf("Health monitoring started (node: %s)", s.nodeID)
+	slog.Info("Health monitoring started", "node", s.nodeID)
 }
 
 // Stop signals background goroutines to halt.
@@ -70,7 +70,7 @@ func (s *Service) Stop() {
 func (s *Service) heartbeatLoop() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("health: heartbeat recovered from panic: %v", r)
+			slog.Error("health: heartbeat recovered from panic", "error", r)
 		}
 	}()
 
@@ -113,7 +113,7 @@ func (s *Service) registerNode() {
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
-		log.Printf("health: failed to register node: %v", err)
+		slog.Error("health: failed to register node", "error", err)
 	}
 }
 
@@ -126,14 +126,14 @@ func (s *Service) heartbeat() {
 		bson.M{"$set": bson.M{"lastSeen": time.Now(), "status": models.NodeStatusActive}},
 	)
 	if err != nil {
-		log.Printf("health: heartbeat failed: %v", err)
+		slog.Warn("health: heartbeat failed", "error", err)
 	}
 }
 
 func (s *Service) collectorLoop() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("health: collector recovered from panic: %v", r)
+			slog.Error("health: collector recovered from panic", "error", r)
 		}
 	}()
 
@@ -167,7 +167,7 @@ func (s *Service) collectAndStore() {
 			NumCPU:       runtime.NumCPU(),
 		}
 	} else if err != nil {
-		log.Printf("health: cpu collect error: %v", err)
+		slog.Warn("health: cpu collect error", "error", err)
 	}
 
 	// Memory
@@ -178,7 +178,7 @@ func (s *Service) collectAndStore() {
 			UsedPercent: vm.UsedPercent,
 		}
 	} else {
-		log.Printf("health: memory collect error: %v", err)
+		slog.Warn("health: memory collect error", "error", err)
 	}
 
 	// Disk
@@ -189,7 +189,7 @@ func (s *Service) collectAndStore() {
 			UsedPercent: du.UsedPercent,
 		}
 	} else {
-		log.Printf("health: disk collect error: %v", err)
+		slog.Warn("health: disk collect error", "error", err)
 	}
 
 	// Network
@@ -199,7 +199,7 @@ func (s *Service) collectAndStore() {
 			BytesRecv: counters[0].BytesRecv,
 		}
 	} else if err != nil {
-		log.Printf("health: network collect error: %v", err)
+		slog.Warn("health: network collect error", "error", err)
 	}
 
 	// HTTP from middleware
@@ -253,7 +253,7 @@ func (s *Service) collectAndStore() {
 	}
 
 	if _, err := s.db.SystemMetrics().InsertOne(ctx, metric); err != nil {
-		log.Printf("health: failed to store metrics: %v", err)
+		slog.Error("health: failed to store metrics", "error", err)
 	}
 }
 
@@ -276,7 +276,7 @@ func (s *Service) collectMongoMetrics(ctx context.Context) models.MongoMetrics {
 			}
 		}
 	} else {
-		log.Printf("health: serverStatus error: %v", err)
+		slog.Warn("health: serverStatus error", "error", err)
 	}
 
 	// dbStats
@@ -286,7 +286,7 @@ func (s *Service) collectMongoMetrics(ctx context.Context) models.MongoMetrics {
 		result.IndexSizeBytes = toInt64(dbStats["indexSize"])
 		result.Collections = toInt32(dbStats["collections"])
 	} else {
-		log.Printf("health: dbStats error: %v", err)
+		slog.Warn("health: dbStats error", "error", err)
 	}
 
 	return result

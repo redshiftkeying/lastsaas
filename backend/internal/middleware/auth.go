@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -165,7 +165,7 @@ func (m *AuthMiddleware) isTokenRevoked(ctx context.Context, rawToken string) bo
 
 	count, err := m.db.RevokedTokens().CountDocuments(ctx, bson.M{"tokenHash": tokenHash})
 	if err != nil {
-		log.Printf("Warning: revoked-token lookup failed (denying access): %v", err)
+		slog.Warn("revoked-token lookup failed, denying access", "error", err)
 		return true
 	}
 	return count > 0

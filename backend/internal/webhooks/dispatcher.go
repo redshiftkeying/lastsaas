@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -36,7 +36,8 @@ type Dispatcher struct {
 	retryQ        chan retryJob
 	stopCh        chan struct{}
 	stopped       chan struct{}
-	encryptionKey []byte // AES-256 key for webhook secret encryption (nil = plaintext fallback)
+	encryptionKey []byte        // AES-256 key for webhook secret encryption (nil = plaintext fallback)
+	emitSem       chan struct{} // bounds concurrent Emit goroutines
 }
 
 const maxRetryWorkers = 5
@@ -52,6 +53,7 @@ func NewDispatcher(database *db.MongoDB, encryptionKey []byte) *Dispatcher {
 		stopCh:        make(chan struct{}),
 		stopped:       make(chan struct{}),
 		encryptionKey: encryptionKey,
+		emitSem:       make(chan struct{}, 10), // max 10 concurrent Emit dispatches
 	}
 	go d.retryWorker()
 	return d
@@ -107,7 +109,16 @@ func (d *Dispatcher) Emit(event events.Event) {
 		return
 	}
 
-	go d.dispatch(eventType, event)
+	// Acquire semaphore to bound concurrent dispatch goroutines
+	select {
+	case d.emitSem <- struct{}{}:
+		go func() {
+			defer func() { <-d.emitSem }()
+			d.dispatch(eventType, event)
+		}()
+	default:
+		slog.Warn("webhooks: emit semaphore full, dropping dispatch", "event_type", eventType)
+	}
 }
 
 // mapEventType converts from events.EventType to models.WebhookEventType.
@@ -172,14 +183,14 @@ func (d *Dispatcher) dispatch(eventType models.WebhookEventType, event events.Ev
 		"isActive": true,
 	})
 	if err != nil {
-		log.Printf("webhooks: failed to query webhooks for %s: %v", eventType, err)
+		slog.Error("webhooks: failed to query webhooks", "event_type", eventType, "error", err)
 		return
 	}
 	defer cursor.Close(ctx)
 
 	var hooks []models.Webhook
 	if err := cursor.All(ctx, &hooks); err != nil {
-		log.Printf("webhooks: failed to decode webhooks: %v", err)
+		slog.Error("webhooks: failed to decode webhooks", "error", err)
 		return
 	}
 
@@ -211,7 +222,7 @@ func (d *Dispatcher) deliverWithRetry(ctx context.Context, hook models.Webhook, 
 
 	req, err := http.NewRequestWithContext(deliverCtx, "POST", hook.URL, bytes.NewReader(body))
 	if err != nil {
-		log.Printf("webhooks: failed to create request for %s: %v", hook.Name, err)
+		slog.Error("webhooks: failed to create request", "webhook", hook.Name, "error", err)
 		return
 	}
 
@@ -257,11 +268,11 @@ func (d *Dispatcher) deliverWithRetry(ctx context.Context, hook models.Webhook, 
 	}
 
 	if _, err := d.db.WebhookDeliveries().InsertOne(deliverCtx, delivery); err != nil {
-		log.Printf("webhooks: failed to record delivery for %s: %v", hook.Name, err)
+		slog.Error("webhooks: failed to record delivery", "webhook", hook.Name, "error", err)
 	}
 
 	if !delivery.Success {
-		log.Printf("webhooks: delivery to %s failed (status: %d, retry: %d/%d)", hook.Name, delivery.ResponseCode, retryCount, maxWebhookRetries)
+		slog.Warn("webhooks: delivery failed", "webhook", hook.Name, "status", delivery.ResponseCode, "retry", retryCount, "max_retries", maxWebhookRetries)
 		if retryCount < maxWebhookRetries {
 			delay := retryDelays[retryCount]
 			select {
@@ -273,7 +284,7 @@ func (d *Dispatcher) deliverWithRetry(ctx context.Context, hook models.Webhook, 
 				fireAt:    time.Now().Add(delay),
 			}:
 			default:
-				log.Printf("webhooks: retry queue full, dropping retry for %s", hook.Name)
+				slog.Warn("webhooks: retry queue full, dropping retry", "webhook", hook.Name)
 			}
 		}
 	}
@@ -291,7 +302,7 @@ func (d *Dispatcher) resolveSecret(stored string) string {
 		if len(stored) > 0 && stored[0] != 0 {
 			return stored
 		}
-		log.Printf("webhooks: failed to decrypt secret: %v", err)
+		slog.Error("webhooks: failed to decrypt secret", "error", err)
 		return ""
 	}
 	return plaintext
@@ -377,7 +388,7 @@ func (d *Dispatcher) DeliverTest(ctx context.Context, hook models.Webhook) model
 	}
 
 	if _, err := d.db.WebhookDeliveries().InsertOne(ctx, delivery); err != nil {
-		log.Printf("webhooks: failed to record test delivery for %s: %v", hook.Name, err)
+		slog.Error("webhooks: failed to record test delivery", "webhook", hook.Name, "error", err)
 	}
 
 	return delivery

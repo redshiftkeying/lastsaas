@@ -2,7 +2,7 @@ package planstore
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"lastsaas/internal/db"
@@ -36,7 +36,7 @@ func Seed(ctx context.Context, database *db.MongoDB) error {
 		if _, insertErr := col.InsertOne(ctx, plan); insertErr != nil {
 			return insertErr
 		}
-		log.Printf("Seeded system plan: Free")
+		slog.Info("Seeded system plan", "plan", "Free")
 	} else if err != nil {
 		return err
 	}

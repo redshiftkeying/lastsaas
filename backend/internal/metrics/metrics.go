@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -41,7 +41,7 @@ func New(database *db.MongoDB) *Service {
 
 func (s *Service) Start() {
 	go s.run()
-	log.Printf("Daily metrics service started (holder=%s)", s.holderID)
+	slog.Info("Daily metrics service started", "holder", s.holderID)
 }
 
 func (s *Service) Stop() {
@@ -119,7 +119,7 @@ func (s *Service) tryAcquireOrRenew() bool {
 		if mongo.IsDuplicateKeyError(result.Err()) {
 			return false
 		}
-		log.Printf("Metrics leader lock error: %v", result.Err())
+		slog.Error("Metrics leader lock error", "error", result.Err())
 		return false
 	}
 
@@ -180,7 +180,7 @@ func (s *Service) collectDaily() {
 	var dauCount, mauCount int64
 	dauMauCursor, err := s.db.Users().Aggregate(ctx, dauMauPipeline)
 	if err != nil {
-		log.Printf("Metrics: DAU/MAU aggregation error: %v", err)
+		slog.Error("Metrics DAU/MAU aggregation error", "error", err)
 	} else {
 		defer dauMauCursor.Close(ctx)
 		var results []struct {
@@ -261,6 +261,6 @@ func (s *Service) collectDaily() {
 		options.Update().SetUpsert(true),
 	)
 	if err != nil {
-		log.Printf("Metrics: upsert daily metric error: %v", err)
+		slog.Error("Metrics upsert daily metric error", "error", err)
 	}
 }

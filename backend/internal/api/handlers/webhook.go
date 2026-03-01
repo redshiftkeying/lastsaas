@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,6 +17,7 @@ import (
 	"lastsaas/internal/models"
 	stripeservice "lastsaas/internal/stripe"
 	"lastsaas/internal/syslog"
+	"lastsaas/internal/telemetry"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -27,12 +28,15 @@ import (
 )
 
 type WebhookHandler struct {
-	stripe    *stripeservice.Service
-	db        *db.MongoDB
-	events    events.Emitter
-	syslog    *syslog.Logger
-	getConfig func(string) string
+	stripe       *stripeservice.Service
+	db           *db.MongoDB
+	events       events.Emitter
+	syslog       *syslog.Logger
+	getConfig    func(string) string
+	telemetrySvc *telemetry.Service
 }
+
+func (h *WebhookHandler) SetTelemetry(svc *telemetry.Service) { h.telemetrySvc = svc }
 
 func NewWebhookHandler(stripeSvc *stripeservice.Service, database *db.MongoDB, emitter events.Emitter, sysLogger *syslog.Logger, getConfig func(string) string) *WebhookHandler {
 	return &WebhookHandler{
@@ -53,12 +57,12 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	event, err := h.stripe.ConstructEvent(body, r.Header.Get("Stripe-Signature"))
 	if err != nil {
-		log.Printf("Webhook signature verification failed: %v", err)
+		slog.Error("Webhook signature verification failed", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("Webhook: received event %s type=%s", event.ID, event.Type)
+	slog.Info("Webhook: received event", "eventId", event.ID, "type", event.Type)
 
 	ctx := r.Context()
 
@@ -76,12 +80,12 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	)
 	if idempResult.Err() == nil {
 		// Document existed before our upsert — duplicate event
-		log.Printf("Webhook: duplicate event %s, skipping", event.ID)
+		slog.Warn("Webhook: duplicate event, skipping", "eventId", event.ID)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	if idempResult.Err() != mongoDB.ErrNoDocuments {
-		log.Printf("Webhook: idempotency check failed for event %s: %v", event.ID, idempResult.Err())
+		slog.Error("Webhook: idempotency check failed", "eventId", event.ID, "error", idempResult.Err())
 		http.Error(w, "idempotency check failed", http.StatusInternalServerError)
 		return
 	}
@@ -92,13 +96,13 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	// by subscription lookup (each instance has its own database).
 	if instanceID := h.stripe.InstanceID(); instanceID != "" {
 		if inst, found := extractInstanceFromEvent(event); found && inst != instanceID {
-			log.Printf("Webhook: skipping event %s (instance %q != %q)", event.ID, inst, instanceID)
+			slog.Info("Webhook: skipping event from different instance", "eventId", event.ID, "eventInstance", inst, "ourInstance", instanceID)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 	}
 
-	log.Printf("Webhook: processing event %s type=%s", event.ID, event.Type)
+	slog.Info("Webhook: processing event", "eventId", event.ID, "type", event.Type)
 
 	var processingErr error
 	switch event.Type {
@@ -119,12 +123,12 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	case "charge.dispute.closed":
 		processingErr = h.handleDisputeClosed(ctx, event)
 	default:
-		log.Printf("Webhook: unhandled event type %s", event.Type)
+		slog.Warn("Webhook: unhandled event type", "type", event.Type)
 	}
 
 	// If processing failed, remove the idempotency record so Stripe can retry.
 	if processingErr != nil {
-		log.Printf("Webhook: processing failed for event %s: %v — removing idempotency record for retry", event.ID, processingErr)
+		slog.Error("Webhook: processing failed, removing idempotency record for retry", "eventId", event.ID, "error", processingErr)
 		h.db.WebhookEvents().DeleteOne(ctx, bson.M{"eventId": event.ID})
 		http.Error(w, "processing failed", http.StatusInternalServerError)
 		return
@@ -141,14 +145,14 @@ func (h *WebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stripe.Event) error {
 	var session stripe.CheckoutSession
 	if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
-		log.Printf("Webhook: failed to unmarshal checkout session: %v", err)
+		slog.Error("Webhook: failed to unmarshal checkout session", "error", err)
 		return fmt.Errorf("unmarshal checkout session: %w", err)
 	}
 
 	tenantID, _ := primitive.ObjectIDFromHex(session.Metadata["tenantId"])
 	userID, _ := primitive.ObjectIDFromHex(session.Metadata["userId"])
 	if tenantID.IsZero() || userID.IsZero() {
-		log.Printf("Webhook: missing tenantId or userId in session metadata")
+		slog.Error("Webhook: missing tenantId or userId in session metadata")
 		return fmt.Errorf("missing tenantId or userId in session metadata")
 	}
 
@@ -156,13 +160,25 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 	if session.Customer != nil && session.Customer.ID != "" {
 		var checkTenant models.Tenant
 		if err := h.db.Tenants().FindOne(ctx, bson.M{"_id": tenantID}).Decode(&checkTenant); err != nil {
-			log.Printf("Webhook: tenant not found for ID %s", tenantID.Hex())
+			slog.Error("Webhook: tenant not found for ID", "tenantId", tenantID.Hex())
 			return fmt.Errorf("tenant not found for checkout: %w", err)
 		}
 		if checkTenant.StripeCustomerID != "" && checkTenant.StripeCustomerID != session.Customer.ID {
 			h.syslog.Critical(ctx, fmt.Sprintf("SECURITY: Checkout customer mismatch — session customer %s != tenant %s customer %s",
 				session.Customer.ID, tenantID.Hex(), checkTenant.StripeCustomerID))
 			return fmt.Errorf("customer ID mismatch: session=%s tenant=%s", session.Customer.ID, checkTenant.StripeCustomerID)
+		}
+		// When tenant has no customer yet, verify no other tenant already uses this customer ID
+		if checkTenant.StripeCustomerID == "" {
+			var otherTenant models.Tenant
+			if err := h.db.Tenants().FindOne(ctx, bson.M{
+				"stripeCustomerId": session.Customer.ID,
+				"_id":              bson.M{"$ne": tenantID},
+			}).Decode(&otherTenant); err == nil {
+				h.syslog.Critical(ctx, fmt.Sprintf("SECURITY: Customer %s already belongs to tenant %s, but checkout metadata claims tenant %s",
+					session.Customer.ID, otherTenant.ID.Hex(), tenantID.Hex()))
+				return fmt.Errorf("customer %s already belongs to another tenant", session.Customer.ID)
+			}
 		}
 	}
 
@@ -175,7 +191,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 		planID, _ := primitive.ObjectIDFromHex(planIDStr)
 		var plan models.Plan
 		if err := h.db.Plans().FindOne(ctx, bson.M{"_id": planID}).Decode(&plan); err != nil {
-			log.Printf("Webhook: plan not found: %s", planIDStr)
+			slog.Error("Webhook: plan not found", "planId", planIDStr)
 			return fmt.Errorf("plan not found: %s: %w", planIDStr, err)
 		}
 
@@ -225,7 +241,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 			updateOp["$inc"] = bson.M{"purchasedCredits": plan.BonusCredits}
 		}
 		if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenantID}, updateOp); err != nil {
-			log.Printf("Webhook: failed to update tenant %s: %v", tenantID.Hex(), err)
+			slog.Error("Webhook: failed to update tenant", "tenantId", tenantID.Hex(), "error", err)
 			return fmt.Errorf("update tenant: %w", err)
 		}
 
@@ -266,12 +282,29 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 			},
 		})
 
+		if h.telemetrySvc != nil {
+			h.telemetrySvc.Track(ctx, models.TelemetryEvent{
+				EventName:  models.TelemetrySubscriptionActivated,
+				Category:   models.TelemetryCategoryFunnel,
+				UserID:     &userID,
+				TenantID:   &tenantID,
+				Properties: map[string]interface{}{"planName": plan.Name, "billingInterval": billingInterval},
+			})
+			h.telemetrySvc.Track(ctx, models.TelemetryEvent{
+				EventName:  models.TelemetryPlanChanged,
+				Category:   models.TelemetryCategoryFunnel,
+				UserID:     &userID,
+				TenantID:   &tenantID,
+				Properties: map[string]interface{}{"planName": plan.Name},
+			})
+		}
+
 	} else if bundleIDStr != "" {
 		// One-time bundle purchase
 		bundleID, _ := primitive.ObjectIDFromHex(bundleIDStr)
 		var bundle models.CreditBundle
 		if err := h.db.CreditBundles().FindOne(ctx, bson.M{"_id": bundleID}).Decode(&bundle); err != nil {
-			log.Printf("Webhook: bundle not found: %s", bundleIDStr)
+			slog.Error("Webhook: bundle not found", "bundleId", bundleIDStr)
 			return fmt.Errorf("bundle not found: %s: %w", bundleIDStr, err)
 		}
 
@@ -280,7 +313,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 			"$inc": bson.M{"purchasedCredits": bundle.Credits},
 			"$set": bson.M{"updatedAt": time.Now()},
 		}); err != nil {
-			log.Printf("Webhook: failed to add bundle credits to tenant %s: %v", tenantID.Hex(), err)
+			slog.Error("Webhook: failed to add bundle credits to tenant", "tenantId", tenantID.Hex(), "error", err)
 			return fmt.Errorf("add bundle credits: %w", err)
 		}
 
@@ -317,7 +350,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Event) error {
 	var invoice stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
-		log.Printf("Webhook: failed to unmarshal invoice: %v", err)
+		slog.Error("Webhook: failed to unmarshal invoice", "error", err)
 		return fmt.Errorf("unmarshal invoice: %w", err)
 	}
 
@@ -340,7 +373,7 @@ func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Eve
 
 	var tenant models.Tenant
 	if err := h.db.Tenants().FindOne(ctx, bson.M{"stripeSubscriptionId": subscriptionID}).Decode(&tenant); err != nil {
-		log.Printf("Webhook: tenant not found for subscription %s", subscriptionID)
+		slog.Error("Webhook: tenant not found for subscription", "subscriptionId", subscriptionID)
 		return fmt.Errorf("tenant not found for subscription %s: %w", subscriptionID, err)
 	}
 
@@ -348,7 +381,7 @@ func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Eve
 	if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{
 		"$set": bson.M{"billingStatus": models.BillingStatusActive, "updatedAt": time.Now()},
 	}); err != nil {
-		log.Printf("Webhook: failed to set billing status active for tenant %s: %v", tenant.ID.Hex(), err)
+		slog.Error("Webhook: failed to set billing status active for tenant", "tenantId", tenant.ID.Hex(), "error", err)
 		return fmt.Errorf("set billing status: %w", err)
 	}
 
@@ -360,13 +393,13 @@ func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Eve
 				if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{
 					"$set": bson.M{"subscriptionCredits": plan.UsageCreditsPerMonth},
 				}); err != nil {
-					log.Printf("Webhook: failed to reset credits for tenant %s: %v", tenant.ID.Hex(), err)
+					slog.Error("Webhook: failed to reset credits for tenant", "tenantId", tenant.ID.Hex(), "error", err)
 				}
 			} else {
 				if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{
 					"$inc": bson.M{"subscriptionCredits": plan.UsageCreditsPerMonth},
 				}); err != nil {
-					log.Printf("Webhook: failed to accrue credits for tenant %s: %v", tenant.ID.Hex(), err)
+					slog.Error("Webhook: failed to accrue credits for tenant", "tenantId", tenant.ID.Hex(), "error", err)
 				}
 			}
 		}
@@ -385,7 +418,7 @@ func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Eve
 	// Find the owner of this tenant for the transaction record
 	var membership models.TenantMembership
 	if err := h.db.TenantMemberships().FindOne(ctx, bson.M{"tenantId": tenant.ID, "role": models.RoleOwner}).Decode(&membership); err != nil {
-		log.Printf("Webhook: owner membership not found for tenant %s: %v", tenant.ID.Hex(), err)
+		slog.Warn("Webhook: owner membership not found for tenant", "tenantId", tenant.ID.Hex(), "error", err)
 	}
 
 	planName := ""
@@ -417,7 +450,7 @@ func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Eve
 func (h *WebhookHandler) handleInvoicePaymentFailed(ctx context.Context, event stripe.Event) error {
 	var invoice stripe.Invoice
 	if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
-		log.Printf("Webhook: failed to unmarshal invoice: %v", err)
+		slog.Error("Webhook: failed to unmarshal invoice", "error", err)
 		return fmt.Errorf("unmarshal invoice: %w", err)
 	}
 
@@ -431,7 +464,7 @@ func (h *WebhookHandler) handleInvoicePaymentFailed(ctx context.Context, event s
 
 	var tenant models.Tenant
 	if err := h.db.Tenants().FindOne(ctx, bson.M{"stripeSubscriptionId": subscriptionID}).Decode(&tenant); err != nil {
-		log.Printf("Webhook: tenant not found for subscription %s", subscriptionID)
+		slog.Error("Webhook: tenant not found for subscription", "subscriptionId", subscriptionID)
 		return fmt.Errorf("tenant not found for subscription %s: %w", subscriptionID, err)
 	}
 
@@ -439,7 +472,7 @@ func (h *WebhookHandler) handleInvoicePaymentFailed(ctx context.Context, event s
 	if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{
 		"$set": bson.M{"billingStatus": models.BillingStatusPastDue, "updatedAt": time.Now()},
 	}); err != nil {
-		log.Printf("Webhook: failed to set past_due for tenant %s: %v", tenant.ID.Hex(), err)
+		slog.Error("Webhook: failed to set past_due for tenant", "tenantId", tenant.ID.Hex(), "error", err)
 		return fmt.Errorf("set past_due: %w", err)
 	}
 
@@ -490,7 +523,7 @@ func (h *WebhookHandler) handleInvoicePaymentFailed(ctx context.Context, event s
 func (h *WebhookHandler) handleSubscriptionUpdated(ctx context.Context, event stripe.Event) error {
 	var sub stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
-		log.Printf("Webhook: failed to unmarshal subscription: %v", err)
+		slog.Error("Webhook: failed to unmarshal subscription", "error", err)
 		return fmt.Errorf("unmarshal subscription: %w", err)
 	}
 
@@ -543,7 +576,7 @@ func (h *WebhookHandler) handleSubscriptionUpdated(ctx context.Context, event st
 	}
 
 	if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{"$set": updates}); err != nil {
-		log.Printf("Webhook: failed to update tenant %s on subscription update: %v", tenant.ID.Hex(), err)
+		slog.Error("Webhook: failed to update tenant on subscription update", "tenantId", tenant.ID.Hex(), "error", err)
 		return fmt.Errorf("update tenant: %w", err)
 	}
 	return nil
@@ -552,7 +585,7 @@ func (h *WebhookHandler) handleSubscriptionUpdated(ctx context.Context, event st
 func (h *WebhookHandler) handleSubscriptionDeleted(ctx context.Context, event stripe.Event) error {
 	var sub stripe.Subscription
 	if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
-		log.Printf("Webhook: failed to unmarshal subscription: %v", err)
+		slog.Error("Webhook: failed to unmarshal subscription", "error", err)
 		return fmt.Errorf("unmarshal subscription: %w", err)
 	}
 
@@ -580,7 +613,7 @@ func (h *WebhookHandler) handleSubscriptionDeleted(ctx context.Context, event st
 	}
 
 	if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{"$set": updates}); err != nil {
-		log.Printf("Webhook: failed to downgrade tenant %s: %v", tenant.ID.Hex(), err)
+		slog.Error("Webhook: failed to downgrade tenant", "tenantId", tenant.ID.Hex(), "error", err)
 		return fmt.Errorf("downgrade tenant: %w", err)
 	}
 
@@ -610,7 +643,7 @@ func (h *WebhookHandler) handleSubscriptionDeleted(ctx context.Context, event st
 func (h *WebhookHandler) handleChargeRefunded(ctx context.Context, event stripe.Event) error {
 	var charge stripe.Charge
 	if err := json.Unmarshal(event.Data.Raw, &charge); err != nil {
-		log.Printf("Webhook: failed to unmarshal charge: %v", err)
+		slog.Error("Webhook: failed to unmarshal charge", "error", err)
 		return fmt.Errorf("unmarshal charge: %w", err)
 	}
 
@@ -620,7 +653,7 @@ func (h *WebhookHandler) handleChargeRefunded(ctx context.Context, event stripe.
 	}
 	var tenant models.Tenant
 	if err := h.db.Tenants().FindOne(ctx, bson.M{"stripeCustomerId": charge.Customer.ID}).Decode(&tenant); err != nil {
-		log.Printf("Webhook: tenant not found for customer %s on refund", charge.Customer.ID)
+		slog.Warn("Webhook: tenant not found for customer on refund", "customerId", charge.Customer.ID)
 		return nil // Not an error — may belong to another instance
 	}
 
@@ -633,7 +666,7 @@ func (h *WebhookHandler) handleChargeRefunded(ctx context.Context, event stripe.
 	var ownerMembership models.TenantMembership
 	h.db.TenantMemberships().FindOne(ctx, bson.M{"tenantId": tenant.ID, "role": models.RoleOwner}).Decode(&ownerMembership)
 
-	h.recordTransaction(ctx, tenant.ID, ownerMembership.UserID, models.TransactionRefund, -refundedAmount, -refundedAmount, 0, "Refund", "", nil, nil, "", "")
+	h.recordTransaction(ctx, tenant.ID, ownerMembership.UserID, models.TransactionRefund, -refundedAmount, -refundedAmount, 0, "Refund", "", nil, nil, "", charge.ID)
 
 	h.events.Emit(events.Event{
 		Type:      "billing.refund_received",
@@ -651,7 +684,7 @@ func (h *WebhookHandler) handleChargeRefunded(ctx context.Context, event stripe.
 func (h *WebhookHandler) handleDisputeCreated(ctx context.Context, event stripe.Event) error {
 	var dispute stripe.Dispute
 	if err := json.Unmarshal(event.Data.Raw, &dispute); err != nil {
-		log.Printf("Webhook: failed to unmarshal dispute: %v", err)
+		slog.Error("Webhook: failed to unmarshal dispute", "error", err)
 		return fmt.Errorf("unmarshal dispute: %w", err)
 	}
 
@@ -666,7 +699,7 @@ func (h *WebhookHandler) handleDisputeCreated(ctx context.Context, event stripe.
 
 	var tenant models.Tenant
 	if err := h.db.Tenants().FindOne(ctx, bson.M{"stripeCustomerId": customerID}).Decode(&tenant); err != nil {
-		log.Printf("Webhook: tenant not found for customer %s on dispute", customerID)
+		slog.Warn("Webhook: tenant not found for customer on dispute", "customerId", customerID)
 		return nil
 	}
 
@@ -674,7 +707,7 @@ func (h *WebhookHandler) handleDisputeCreated(ctx context.Context, event stripe.
 	if _, err := h.db.Tenants().UpdateOne(ctx, bson.M{"_id": tenant.ID}, bson.M{
 		"$set": bson.M{"billingStatus": models.BillingStatusPastDue, "updatedAt": time.Now()},
 	}); err != nil {
-		log.Printf("Webhook: failed to set past_due for tenant %s on dispute: %v", tenant.ID.Hex(), err)
+		slog.Error("Webhook: failed to set past_due for tenant on dispute", "tenantId", tenant.ID.Hex(), "error", err)
 	}
 
 	h.syslog.Critical(ctx, fmt.Sprintf("Payment dispute opened: tenant %s (%s), amount $%.2f, reason: %s",
@@ -697,7 +730,7 @@ func (h *WebhookHandler) handleDisputeCreated(ctx context.Context, event stripe.
 func (h *WebhookHandler) handleDisputeClosed(ctx context.Context, event stripe.Event) error {
 	var dispute stripe.Dispute
 	if err := json.Unmarshal(event.Data.Raw, &dispute); err != nil {
-		log.Printf("Webhook: failed to unmarshal dispute: %v", err)
+		slog.Error("Webhook: failed to unmarshal dispute", "error", err)
 		return fmt.Errorf("unmarshal dispute: %w", err)
 	}
 
@@ -745,7 +778,7 @@ func (h *WebhookHandler) handleDisputeClosed(ctx context.Context, event stripe.E
 func (h *WebhookHandler) recordTransaction(ctx context.Context, tenantID, userID primitive.ObjectID, txType models.TransactionType, amountCents, subtotalCents, taxAmountCents int64, itemName, interval string, planID, bundleID *primitive.ObjectID, stripeSubID, stripeSessionID string) {
 	invoiceNum, err := h.stripe.NextInvoiceNumber(ctx)
 	if err != nil {
-		log.Printf("Failed to generate invoice number: %v", err)
+		slog.Error("Failed to generate invoice number", "error", err)
 		randBytes := make([]byte, 4)
 		rand.Read(randBytes)
 		invoiceNum = fmt.Sprintf("INV-ERR-%d-%s", time.Now().UnixNano(), hex.EncodeToString(randBytes))
@@ -781,7 +814,7 @@ func (h *WebhookHandler) recordTransaction(ctx context.Context, tenantID, userID
 	}
 
 	if _, err := h.db.FinancialTransactions().InsertOne(ctx, tx); err != nil {
-		log.Printf("Failed to record transaction: %v", err)
+		slog.Error("Failed to record transaction", "error", err)
 	}
 }
 

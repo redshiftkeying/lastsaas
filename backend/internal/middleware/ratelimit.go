@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -54,13 +54,16 @@ var (
 	EmailVerificationLimit  = RateLimitConfig{MaxRequests: 10, Window: time.Hour}
 	TokenRefreshLimit       = RateLimitConfig{MaxRequests: 30, Window: time.Minute}
 	InvitationLimit         = RateLimitConfig{MaxRequests: 20, Window: time.Hour}
-	MFAChallengeLimit       = RateLimitConfig{MaxRequests: 5, Window: 5 * time.Minute}
+	MFAChallengeLimit       = RateLimitConfig{MaxRequests: 3, Window: 5 * time.Minute}
 	MagicLinkLimit          = RateLimitConfig{MaxRequests: 5, Window: 15 * time.Minute}
 	EmailPasswordResetLimit = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
 	EmailMagicLinkLimit     = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
 	UsageRecordLimit        = RateLimitConfig{MaxRequests: 120, Window: time.Minute}
 	ResetTokenVerifyLimit   = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
 	MagicLinkVerifyLimit    = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
+	CSVExportLimit              = RateLimitConfig{MaxRequests: 5, Window: time.Hour}
+	TelemetryAnonymousLimit     = RateLimitConfig{MaxRequests: 60, Window: time.Minute}
+	TelemetryAuthenticatedLimit = RateLimitConfig{MaxRequests: 120, Window: time.Minute}
 )
 
 // NewRateLimiter creates an in-memory-only rate limiter (fallback mode).
@@ -126,7 +129,7 @@ func (rl *RateLimiter) Allow(key string, config RateLimitConfig) (bool, int, tim
 			return allowed, remaining, resetTime
 		}
 		// Fall back to local in-memory limiter when distributed check fails.
-		log.Printf("ratelimit: distributed check failed for key %s, falling back to local: %v", key, err)
+		slog.Warn("distributed rate-limit check failed, falling back to local", "key", key, "error", err)
 	}
 	return rl.allowLocal(key, config)
 }

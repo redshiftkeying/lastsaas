@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -53,7 +53,7 @@ func (m *MongoDB) EnsureSchemaValidation() {
 		}
 
 		if err := m.Database.RunCommand(ctx, cmd).Err(); err != nil {
-			log.Printf("Warning: failed to apply schema validation on %s: %v", cs.Collection, err)
+			slog.Warn("failed to apply schema validation", "collection", cs.Collection, "error", err)
 		}
 	}
 }

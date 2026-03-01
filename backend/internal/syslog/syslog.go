@@ -2,7 +2,7 @@ package syslog
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -85,7 +85,7 @@ func (l *Logger) log(ctx context.Context, severity models.LogSeverity, message s
 		CreatedAt: time.Now(),
 	}
 	if _, err := l.db.SystemLogs().InsertOne(ctx, entry); err != nil {
-		log.Printf("syslog: failed to write log: %v", err)
+		slog.Error("syslog: failed to write log", "error", err)
 	}
 
 	if detected := detectInjection(rawMessage); detected != "" {
@@ -119,7 +119,7 @@ func (l *Logger) logCategorized(ctx context.Context, severity models.LogSeverity
 		CreatedAt: time.Now(),
 	}
 	if _, err := l.db.SystemLogs().InsertOne(ctx, entry); err != nil {
-		log.Printf("syslog: failed to write log: %v", err)
+		slog.Error("syslog: failed to write log", "error", err)
 	}
 
 	if detected := detectInjection(rawMessage); detected != "" {
@@ -210,7 +210,7 @@ func (l *Logger) LogTenantActivity(ctx context.Context, severity models.LogSever
 		CreatedAt: time.Now(),
 	}
 	if _, err := l.db.SystemLogs().InsertOne(ctx, entry); err != nil {
-		log.Printf("syslog: failed to write tenant activity log: %v", err)
+		slog.Error("syslog: failed to write tenant activity log", "error", err)
 	}
 }
 

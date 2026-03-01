@@ -2,7 +2,7 @@ package configstore
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -370,7 +370,7 @@ func Seed(ctx context.Context, database *db.MongoDB) error {
 			if _, insertErr := col.InsertOne(ctx, def); insertErr != nil {
 				return insertErr
 			}
-			log.Printf("Seeded system config variable: %s", def.Name)
+			slog.Info("Seeded system config variable", "name", def.Name)
 		} else if err != nil {
 			return err
 		}

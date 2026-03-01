@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -251,7 +251,7 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 			newSeats = tenantPlan.MinSeats
 		}
 		if err := h.stripe.UpdateSubscriptionQuantity(r.Context(), tenant.StripeSubscriptionID, int64(newSeats)); err != nil {
-			log.Printf("Failed to update seat quantity for tenant %s: %v", tenant.ID.Hex(), err)
+			slog.Error("Failed to update seat quantity", "tenantId", tenant.ID.Hex(), "error", err)
 		} else {
 			h.db.Tenants().UpdateOne(r.Context(), bson.M{"_id": tenant.ID}, bson.M{"$set": bson.M{"seatQuantity": newSeats, "updatedAt": time.Now()}})
 		}
@@ -264,7 +264,7 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 		_ = ctx // timeout guard for background goroutine
 		if h.emailService != nil {
 			if err := h.emailService.SendInvitationEmail(req.Email, user.DisplayName, tenant.Name, token); err != nil {
-				log.Printf("Failed to send invitation email to %s: %v", req.Email, err)
+				slog.Error("Failed to send invitation email", "to", req.Email, "error", err)
 			}
 		}
 	}()
@@ -350,7 +350,7 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 				newSeats = 1
 			}
 			if err := h.stripe.UpdateSubscriptionQuantity(r.Context(), tenant.StripeSubscriptionID, int64(newSeats)); err != nil {
-				log.Printf("Failed to update seat quantity for tenant %s: %v", tenant.ID.Hex(), err)
+				slog.Error("Failed to update seat quantity", "tenant", tenant.ID.Hex(), "error", err)
 			} else {
 				h.db.Tenants().UpdateOne(r.Context(), bson.M{"_id": tenant.ID}, bson.M{"$set": bson.M{"seatQuantity": newSeats, "updatedAt": time.Now()}})
 			}

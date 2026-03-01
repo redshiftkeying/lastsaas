@@ -36,6 +36,15 @@ var commonPasswords = map[string]bool{
 	"passw0rd": true, "pa$$word": true, "changeme": true,
 }
 
+// dummyHash is a pre-computed bcrypt hash used to maintain constant-time
+// behavior when comparing passwords for non-existent users.
+var dummyHash string
+
+func init() {
+	h, _ := bcrypt.GenerateFromPassword([]byte("dummy-timing-safe"), bcryptCost)
+	dummyHash = string(h)
+}
+
 type PasswordService struct {
 	cost int
 }
@@ -59,6 +68,12 @@ func (s *PasswordService) HashPassword(password string) (string, error) {
 
 func (s *PasswordService) ComparePassword(hashedPassword, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+}
+
+// DummyCompare performs a bcrypt comparison against a dummy hash to equalize
+// response timing for non-existent user lookups, preventing account enumeration.
+func (s *PasswordService) DummyCompare(password string) {
+	_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(password))
 }
 
 func (s *PasswordService) ValidatePasswordStrength(password string) error {

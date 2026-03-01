@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"time"
@@ -70,7 +70,7 @@ func (s *ResendService) SendEmail(to, subject, html string) error {
 		if attempt > 0 {
 			backoff := time.Duration(math.Pow(2, float64(attempt))) * 500 * time.Millisecond
 			time.Sleep(backoff)
-			log.Printf("Email retry attempt %d/%d for %s", attempt+1, maxRetries, to)
+			slog.Warn("email retry attempt", "attempt", attempt+1, "maxRetries", maxRetries, "to", to)
 		}
 
 		req, err := http.NewRequest("POST", s.baseURL+"/emails", bytes.NewBuffer(jsonBody))
@@ -84,7 +84,7 @@ func (s *ResendService) SendEmail(to, subject, html string) error {
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			if attempt < maxRetries-1 {
-				log.Printf("Email network error (will retry): %v", err)
+				slog.Warn("email network error, will retry", "error", err)
 				continue
 			}
 			return fmt.Errorf("failed to send email after %d attempts: %w", maxRetries, err)
@@ -93,7 +93,7 @@ func (s *ResendService) SendEmail(to, subject, html string) error {
 
 		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
 			apicounter.ResendEmails.Add(1)
-			log.Printf("Email sent successfully to %s", to)
+			slog.Info("email sent successfully", "to", to)
 			return nil
 		}
 
@@ -102,11 +102,11 @@ func (s *ResendService) SendEmail(to, subject, html string) error {
 
 		// Retry on transient errors (429 rate limit, 5xx server errors)
 		if (resp.StatusCode == 429 || resp.StatusCode >= 500) && attempt < maxRetries-1 {
-			log.Printf("Email API transient error (status %d, will retry): %s", resp.StatusCode, string(body))
+			slog.Warn("email API transient error, will retry", "status", resp.StatusCode, "body", string(body))
 			continue
 		}
 
-		log.Printf("Email API error: status %d, body: %s", resp.StatusCode, string(body))
+		slog.Error("email API error", "status", resp.StatusCode, "body", string(body))
 		return fmt.Errorf("email API returned status %d", resp.StatusCode)
 	}
 	return fmt.Errorf("email send failed after %d attempts", maxRetries)
@@ -135,13 +135,13 @@ func (s *ResendService) executeTemplate(configKey string, data map[string]string
 
 	t, err := template.New(configKey).Parse(tmplStr)
 	if err != nil {
-		log.Printf("email: failed to parse template %s, using fallback: %v", configKey, err)
+		slog.Error("email: failed to parse template, using fallback", "template", configKey, "error", err)
 		return fallback
 	}
 
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, data); err != nil {
-		log.Printf("email: failed to execute template %s, using fallback: %v", configKey, err)
+		slog.Error("email: failed to execute template, using fallback", "template", configKey, "error", err)
 		return fallback
 	}
 	return buf.String()

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,6 +26,7 @@ import (
 	"lastsaas/internal/planstore"
 	stripeservice "lastsaas/internal/stripe"
 	"lastsaas/internal/syslog"
+	"lastsaas/internal/telemetry"
 	"lastsaas/internal/version"
 	"lastsaas/internal/webhooks"
 
@@ -92,21 +93,23 @@ func main() {
 	env := config.GetEnv()
 	cfg, err := config.Load(env)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		slog.Error("Failed to load config", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("Starting LastSaaS in %s mode", cfg.Environment)
+	slog.Info("Starting LastSaaS", "mode", cfg.Environment)
 
 	// Connect to MongoDB
 	database, err := db.NewMongoDB(cfg.Database.URI, cfg.Database.Name)
 	if err != nil {
-		log.Fatalf("Failed to connect to MongoDB: %v", err)
+		slog.Error("Failed to connect to MongoDB", "error", err)
+		os.Exit(1)
 	}
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		database.Close(ctx)
 	}()
-	log.Println("Connected to MongoDB")
+	slog.Info("Connected to MongoDB")
 
 	// Load and check version
 	version.Load()
@@ -114,20 +117,23 @@ func main() {
 
 	// Seed and load configuration store
 	if err := configstore.Seed(context.Background(), database); err != nil {
-		log.Fatalf("Failed to seed config variables: %v", err)
+		slog.Error("Failed to seed config variables", "error", err)
+		os.Exit(1)
 	}
 	cfgStore := configstore.New(database)
 	if err := cfgStore.Load(context.Background()); err != nil {
-		log.Fatalf("Failed to load config store: %v", err)
+		slog.Error("Failed to load config store", "error", err)
+		os.Exit(1)
 	}
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 	cfgStore.StartAutoReload(appCtx, 60*time.Second)
-	log.Println("Configuration store loaded (auto-reload every 60s)")
+	slog.Info("Configuration store loaded", "reloadInterval", "60s")
 
 	// Seed plans
 	if err := planstore.Seed(context.Background(), database); err != nil {
-		log.Fatalf("Failed to seed plans: %v", err)
+		slog.Error("Failed to seed plans", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize system logger
@@ -150,9 +156,9 @@ func main() {
 			cfg.OAuth.GoogleClientSecret,
 			cfg.OAuth.GoogleRedirectURL,
 		)
-		log.Println("Google OAuth configured")
+		slog.Info("Google OAuth configured")
 	} else {
-		log.Println("Google OAuth not configured (missing credentials)")
+		slog.Warn("Google OAuth not configured", "reason", "missing credentials")
 	}
 
 	var githubOAuth *auth.GitHubOAuthService
@@ -162,9 +168,9 @@ func main() {
 			cfg.OAuth.GitHubClientSecret,
 			cfg.OAuth.GitHubRedirectURL,
 		)
-		log.Println("GitHub OAuth configured")
+		slog.Info("GitHub OAuth configured")
 	} else {
-		log.Println("GitHub OAuth not configured (missing credentials)")
+		slog.Warn("GitHub OAuth not configured", "reason", "missing credentials")
 	}
 
 	var microsoftOAuth *auth.MicrosoftOAuthService
@@ -174,9 +180,9 @@ func main() {
 			cfg.OAuth.MicrosoftClientSecret,
 			cfg.OAuth.MicrosoftRedirectURL,
 		)
-		log.Println("Microsoft OAuth configured")
+		slog.Info("Microsoft OAuth configured")
 	} else {
-		log.Println("Microsoft OAuth not configured (missing credentials)")
+		slog.Warn("Microsoft OAuth not configured", "reason", "missing credentials")
 	}
 
 	var emailService *email.ResendService
@@ -189,9 +195,9 @@ func main() {
 			cfg.Frontend.URL,
 			cfgStore.Get,
 		)
-		log.Println("Email service configured (Resend)")
+		slog.Info("Email service configured", "provider", "Resend")
 	} else {
-		log.Println("Email service not configured (missing Resend API key)")
+		slog.Warn("Email service not configured", "reason", "missing Resend API key")
 	}
 
 	// Initialize Stripe service (optional — billing works without it)
@@ -204,17 +210,18 @@ func main() {
 			database,
 			cfg.Frontend.URL,
 		)
-		log.Println("Stripe billing configured")
+		slog.Info("Stripe billing configured")
 	} else {
-		log.Println("Stripe billing not configured (missing secret key)")
+		slog.Warn("Stripe billing not configured", "reason", "missing secret key")
 	}
 
 	webhookEncKey, err := webhooks.ParseEncryptionKey(cfg.Webhooks.EncryptionKey)
 	if err != nil {
-		log.Fatalf("Invalid webhook encryption key: %v", err)
+		slog.Error("Invalid webhook encryption key", "error", err)
+		os.Exit(1)
 	}
 	if webhookEncKey != nil {
-		log.Println("Webhook secret encryption enabled")
+		slog.Info("Webhook secret encryption enabled")
 	}
 	webhookDispatcher := webhooks.NewDispatcher(database, webhookEncKey)
 	defer webhookDispatcher.Stop()
@@ -271,11 +278,18 @@ func main() {
 	healthService.Start()
 	defer healthService.Stop()
 
+	// Initialize telemetry service
+	telemetrySvc := telemetry.New(database)
+
 	// Initialize handlers
 	bootstrapHandler := handlers.NewBootstrapHandler(database)
 	authHandler := handlers.NewAuthHandler(database, jwtService, passwordService, googleOAuth, emailService, emitter, cfg.Frontend.URL, sysLogger)
 	authHandler.SetGetConfig(cfgStore.Get)
 	authHandler.SetRateLimiter(rateLimiter)
+	if webhookEncKey != nil {
+		authHandler.SetTOTPEncryptionKey(webhookEncKey)
+	}
+	authHandler.SetTelemetry(telemetrySvc)
 	if githubOAuth != nil {
 		authHandler.SetGitHubOAuth(githubOAuth)
 	}
@@ -298,8 +312,12 @@ func main() {
 	healthHandler := handlers.NewHealthHandler(healthService)
 	healthHandler.SetEmailService(emailService)
 	billingHandler := handlers.NewBillingHandler(stripeSvc, database, emitter, sysLogger, cfgStore)
+	billingHandler.SetTelemetry(telemetrySvc)
 	promotionsHandler := handlers.NewPromotionsHandler(database, stripeSvc, cfgStore)
 	webhookHandler := handlers.NewWebhookHandler(stripeSvc, database, emitter, sysLogger, cfgStore.Get)
+	webhookHandler.SetTelemetry(telemetrySvc)
+	pmHandler := handlers.NewPMHandler(database, telemetrySvc, sysLogger)
+	telemetryHandler := handlers.NewTelemetryHandler(telemetrySvc)
 	apiKeysHandler := handlers.NewAPIKeysHandler(database, emitter, sysLogger)
 	webhooksHandler := handlers.NewWebhooksHandler(database, sysLogger, webhookDispatcher)
 	brandingHandler := handlers.NewBrandingHandler(database, cfgStore, sysLogger)
@@ -327,7 +345,15 @@ func main() {
 	}).Methods("GET")
 
 	api := router.PathPrefix("/api").Subrouter()
+	api.Use(middleware.RequestID)
+	api.Use(middleware.APIVersion)
 	api.Use(middleware.BodySizeLimit)
+
+	// Version endpoint (public, no auth)
+	api.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(fmt.Sprintf(`{"version":%q}`, version.Current)))
+	}).Methods("GET")
 
 	// --- Bootstrap status (always accessible, init is CLI-only) ---
 	api.HandleFunc("/bootstrap/status", bootstrapHandler.Status).Methods("GET")
@@ -335,6 +361,7 @@ func main() {
 	// API documentation (public, no auth)
 	api.HandleFunc("/docs", handlers.DocsHTML).Methods("GET")
 	api.HandleFunc("/docs/markdown", handlers.DocsMarkdown).Methods("GET")
+	api.HandleFunc("/docs/openapi.json", handlers.DocsOpenAPI).Methods("GET")
 
 	// --- Public branding routes (no auth, no bootstrap guard) ---
 	api.HandleFunc("/branding", brandingHandler.GetBranding).Methods("GET")
@@ -525,6 +552,40 @@ func main() {
 	)).Methods("POST")
 	usageAPI.HandleFunc("/summary", usageHandler.GetSummary).Methods("GET")
 
+	// Anonymous telemetry route (rate-limited by IP, no auth)
+	guarded.HandleFunc("/telemetry/track", rateLimiter.RateLimitHandler(
+		middleware.TelemetryAnonymousLimit,
+		func(r *http.Request) string { return "telemetry:" + middleware.GetClientIP(r) },
+		telemetryHandler.TrackAnonymous,
+	)).Methods("POST")
+
+	// Authenticated telemetry routes (require JWT + tenant)
+	telemetryAPI := guarded.PathPrefix("/telemetry").Subrouter()
+	telemetryAPI.Use(authMiddleware.RequireAuth)
+	telemetryAPI.Use(tenantMiddleware.RequireTenant)
+	telemetryAPI.HandleFunc("/events", rateLimiter.RateLimitHandler(
+		middleware.TelemetryAuthenticatedLimit,
+		func(r *http.Request) string {
+			user, _ := middleware.GetUserFromContext(r.Context())
+			if user != nil {
+				return "telemetry:" + user.ID.Hex()
+			}
+			return "telemetry:" + middleware.GetClientIP(r)
+		},
+		telemetryHandler.TrackAuthenticated,
+	)).Methods("POST")
+	telemetryAPI.HandleFunc("/events/batch", rateLimiter.RateLimitHandler(
+		middleware.TelemetryAuthenticatedLimit,
+		func(r *http.Request) string {
+			user, _ := middleware.GetUserFromContext(r.Context())
+			if user != nil {
+				return "telemetry:" + user.ID.Hex()
+			}
+			return "telemetry:" + middleware.GetClientIP(r)
+		},
+		telemetryHandler.TrackBatch,
+	)).Methods("POST")
+
 	// Webhook route (no auth — uses Stripe signature verification)
 	api.HandleFunc("/billing/webhook", webhookHandler.HandleWebhook).Methods("POST")
 
@@ -532,13 +593,17 @@ func main() {
 	billingAPI := guarded.PathPrefix("/billing").Subrouter()
 	billingAPI.Use(authMiddleware.RequireAuth)
 	billingAPI.Use(tenantMiddleware.RequireTenant)
-	billingAPI.HandleFunc("/checkout", billingHandler.Checkout).Methods("POST")
-	billingAPI.HandleFunc("/portal", billingHandler.Portal).Methods("POST")
 	billingAPI.HandleFunc("/transactions", billingHandler.ListTransactions).Methods("GET")
 	billingAPI.HandleFunc("/transactions/{id}/invoice", billingHandler.GetInvoice).Methods("GET")
 	billingAPI.HandleFunc("/transactions/{id}/invoice/pdf", billingHandler.GetInvoicePDF).Methods("GET")
-	billingAPI.HandleFunc("/cancel", billingHandler.CancelSubscription).Methods("POST")
 	billingAPI.HandleFunc("/config", billingHandler.GetConfig).Methods("GET")
+
+	// Billing actions that modify the subscription (owner only)
+	billingOwner := billingAPI.PathPrefix("").Subrouter()
+	billingOwner.Use(middleware.RequireRole(models.RoleOwner))
+	billingOwner.HandleFunc("/checkout", billingHandler.Checkout).Methods("POST")
+	billingOwner.HandleFunc("/portal", billingHandler.Portal).Methods("POST")
+	billingOwner.HandleFunc("/cancel", billingHandler.CancelSubscription).Methods("POST")
 
 	// Admin routes — three tiers:
 	//   adminAPI   = root tenant + user role  (read-only access to all admin data)
@@ -555,11 +620,19 @@ func main() {
 	adminAPI.HandleFunc("/dashboard", adminHandler.GetDashboard).Methods("GET")
 	adminAPI.HandleFunc("/logs", logHandler.ListLogs).Methods("GET")
 	adminAPI.HandleFunc("/logs/severity-counts", logHandler.SeverityCounts).Methods("GET")
-	adminAPI.HandleFunc("/logs/export", logHandler.ExportCSV).Methods("GET")
+	adminAPI.HandleFunc("/logs/export", rateLimiter.RateLimitHandler(
+		middleware.CSVExportLimit,
+		func(r *http.Request) string { return middleware.GetClientIP(r) },
+		logHandler.ExportCSV,
+	)).Methods("GET")
 	adminAPI.HandleFunc("/config", configHandler.ListConfig).Methods("GET")
 	adminAPI.HandleFunc("/config/{name}", configHandler.GetConfig).Methods("GET")
 	adminAPI.HandleFunc("/tenants", adminHandler.ListTenants).Methods("GET")
-	adminAPI.HandleFunc("/tenants/export", adminHandler.ExportTenantsCSV).Methods("GET")
+	adminAPI.HandleFunc("/tenants/export", rateLimiter.RateLimitHandler(
+		middleware.CSVExportLimit,
+		func(r *http.Request) string { return middleware.GetClientIP(r) },
+		adminHandler.ExportTenantsCSV,
+	)).Methods("GET")
 	adminAPI.HandleFunc("/tenants/{tenantId}", adminHandler.GetTenant).Methods("GET")
 	adminAPI.HandleFunc("/plans", plansHandler.ListPlans).Methods("GET")
 	adminAPI.HandleFunc("/plans/{planId}", plansHandler.GetPlan).Methods("GET")
@@ -578,13 +651,23 @@ func main() {
 	adminAPI.HandleFunc("/api-keys", apiKeysHandler.ListAPIKeys).Methods("GET")
 	adminAPI.HandleFunc("/members", adminHandler.ListRootMembers).Methods("GET")
 	adminAPI.HandleFunc("/users", adminHandler.ListUsers).Methods("GET")
-	adminAPI.HandleFunc("/users/export", adminHandler.ExportUsersCSV).Methods("GET")
+	adminAPI.HandleFunc("/users/export", rateLimiter.RateLimitHandler(
+		middleware.CSVExportLimit,
+		func(r *http.Request) string { return middleware.GetClientIP(r) },
+		adminHandler.ExportUsersCSV,
+	)).Methods("GET")
 	adminAPI.HandleFunc("/users/{userId}", adminHandler.GetUser).Methods("GET")
 	adminAPI.HandleFunc("/webhooks", webhooksHandler.ListWebhooks).Methods("GET")
 	adminAPI.HandleFunc("/webhooks/event-types", webhooksHandler.ListEventTypes).Methods("GET")
 	adminAPI.HandleFunc("/webhooks/{webhookId}", webhooksHandler.GetWebhook).Methods("GET")
 	adminAPI.HandleFunc("/branding/media", brandingHandler.ListMedia).Methods("GET")
 	adminAPI.HandleFunc("/branding/pages", brandingHandler.AdminListPages).Methods("GET")
+	adminAPI.HandleFunc("/pm/funnel", pmHandler.GetFunnel).Methods("GET")
+	adminAPI.HandleFunc("/pm/retention", pmHandler.GetRetention).Methods("GET")
+	adminAPI.HandleFunc("/pm/engagement", pmHandler.GetEngagement).Methods("GET")
+	adminAPI.HandleFunc("/pm/kpis", pmHandler.GetKPIs).Methods("GET")
+	adminAPI.HandleFunc("/pm/events", pmHandler.GetCustomEvents).Methods("GET")
+	adminAPI.HandleFunc("/pm/events/types", pmHandler.ListEventTypes).Methods("GET")
 
 	// Admin-level write routes (admin+ role)
 	adminWrite := adminAPI.PathPrefix("").Subrouter()
@@ -643,7 +726,7 @@ func main() {
 
 	// Serve frontend static files in production
 	if cfg.Frontend.StaticDir != "" {
-		log.Printf("Serving frontend from %s", cfg.Frontend.StaticDir)
+		slog.Info("Serving frontend", "staticDir", cfg.Frontend.StaticDir)
 		spa := spaHandler{
 			staticPath: cfg.Frontend.StaticDir,
 			indexPath:  "index.html",
@@ -664,6 +747,7 @@ func main() {
 		AllowedOrigins:   []string{cfg.Frontend.URL},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Tenant-ID"},
+		ExposedHeaders:   []string{"X-Request-ID", "X-API-Version"},
 		AllowCredentials: true,
 		MaxAge:           86400,
 	})
@@ -683,9 +767,10 @@ func main() {
 
 	// Graceful shutdown
 	go func() {
-		log.Printf("Server listening on %s", addr)
+		slog.Info("Server listening", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			slog.Error("Server failed", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -693,7 +778,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	slog.Info("Shutting down server")
 	// Cancel app-wide context to signal background services (config reload, etc.)
 	appCancel()
 
@@ -701,7 +786,8 @@ func main() {
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server forced shutdown: %v", err)
+		slog.Error("Server forced shutdown", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Server stopped")
+	slog.Info("Server stopped")
 }

@@ -3,7 +3,7 @@ package health
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -70,7 +70,7 @@ func (s *Service) IntegrationsHealthy() (bool, []string) {
 func (s *Service) integrationCheckLoop() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("health: integration check recovered from panic: %v", r)
+			slog.Warn("health: integration check recovered from panic", "panic", r)
 		}
 	}()
 
@@ -117,7 +117,7 @@ func (s *Service) runIntegrationChecks() {
 		if err != nil {
 			result.Status = models.IntegrationUnhealthy
 			result.Message = err.Error()
-			log.Printf("health: integration %s unhealthy: %v", entry.name, err)
+			slog.Warn("health: integration unhealthy", "integration", entry.name, "error", err)
 		} else {
 			result.Status = models.IntegrationHealthy
 			result.Message = "OK"

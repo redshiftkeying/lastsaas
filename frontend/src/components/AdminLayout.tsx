@@ -18,6 +18,7 @@ import {
   Tag,
   Megaphone,
   UserPlus,
+  BarChart3,
 } from 'lucide-react';
 import { useTenant } from '../contexts/TenantContext';
 import { messagesApi } from '../api/client';
@@ -49,6 +50,7 @@ export default function AdminLayout() {
     { path: '/last/members', icon: UserPlus, label: 'Root Members' },
     { path: '/last/plans', icon: CreditCard, label: 'Plans' },
     { path: '/last/financial', icon: DollarSign, label: 'Financial' },
+    { path: '/last/pm', icon: BarChart3, label: 'Product' },
     { path: '/last/promotions', icon: Tag, label: 'Promotions' },
     { path: '/last/announcements', icon: Megaphone, label: 'Announcements' },
     { path: '/last/health', icon: Activity, label: 'System Health' },

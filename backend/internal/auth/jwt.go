@@ -23,6 +23,7 @@ type AccessTokenClaims struct {
 	UserID         string `json:"userId"`
 	Email          string `json:"email"`
 	DisplayName    string `json:"displayName"`
+	TokenType      string `json:"tokenType,omitempty"` // "access", "mfa", "impersonation"
 	MFAPending     bool   `json:"mfaPending,omitempty"`
 	ImpersonatedBy string `json:"impersonatedBy,omitempty"`
 	jwt.RegisteredClaims
@@ -55,6 +56,7 @@ func (s *JWTService) GenerateAccessToken(userID, email, displayName string) (str
 		UserID:      userID,
 		Email:       email,
 		DisplayName: displayName,
+		TokenType:   "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -69,6 +71,7 @@ func (s *JWTService) GenerateMFAToken(userID, email string) (string, error) {
 	claims := AccessTokenClaims{
 		UserID:     userID,
 		Email:      email,
+		TokenType:  "mfa",
 		MFAPending: true,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
@@ -85,6 +88,7 @@ func (s *JWTService) GenerateImpersonationToken(userID, email, displayName, impe
 		UserID:         userID,
 		Email:          email,
 		DisplayName:    displayName,
+		TokenType:      "impersonation",
 		ImpersonatedBy: impersonatedBy,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),

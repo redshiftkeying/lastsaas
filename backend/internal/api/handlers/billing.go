@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
@@ -19,6 +19,7 @@ import (
 	"lastsaas/internal/models"
 	stripeservice "lastsaas/internal/stripe"
 	"lastsaas/internal/syslog"
+	"lastsaas/internal/telemetry"
 
 	"github.com/gorilla/mux"
 	"github.com/jung-kurt/gofpdf"
@@ -28,12 +29,15 @@ import (
 )
 
 type BillingHandler struct {
-	stripe *stripeservice.Service
-	db     *db.MongoDB
-	events events.Emitter
-	syslog *syslog.Logger
-	store  *configstore.Store
+	stripe       *stripeservice.Service
+	db           *db.MongoDB
+	events       events.Emitter
+	syslog       *syslog.Logger
+	store        *configstore.Store
+	telemetrySvc *telemetry.Service
 }
+
+func (h *BillingHandler) SetTelemetry(svc *telemetry.Service) { h.telemetrySvc = svc }
 
 func NewBillingHandler(stripeSvc *stripeservice.Service, database *db.MongoDB, emitter events.Emitter, sysLogger *syslog.Logger, store *configstore.Store) *BillingHandler {
 	return &BillingHandler{
@@ -90,6 +94,10 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 		if err := h.db.Plans().FindOne(ctx, bson.M{"_id": planID}).Decode(&plan); err != nil {
 			respondWithError(w, http.StatusNotFound, "Plan not found")
 			return
+		}
+
+		if h.telemetrySvc != nil {
+			h.telemetrySvc.TrackCheckoutStarted(ctx, user.ID, tenant.ID, plan.Name)
 		}
 
 		// Prevent trial abuse: skip trial if this tenant or user already used one
@@ -167,7 +175,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 			customerID, err := h.stripe.GetOrCreateCustomer(ctx, tenant, user.Email)
 			if err != nil {
-				log.Printf("Billing: failed to get/create customer: %v", err)
+				slog.Error("Billing: failed to get/create customer", "error", err)
 				respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 				return
 			}
@@ -200,7 +208,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 				basePriceID, err := h.stripe.GetOrCreatePrice(ctx, "plan_base_"+req.BillingInterval, planID, plan.Name+" (Base)", baseAmount, req.BillingInterval, currency)
 				if err != nil {
-					log.Printf("Billing: failed to create base price: %v", err)
+					slog.Error("Billing: failed to create base price", "error", err)
 					respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 					return
 				}
@@ -213,7 +221,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 				if additionalSeats > 0 {
 					seatPriceID, err := h.stripe.GetOrCreatePrice(ctx, "plan_seat_"+req.BillingInterval, planID, plan.Name+" (Per Seat)", perSeatAmount, req.BillingInterval, currency)
 					if err != nil {
-						log.Printf("Billing: failed to create seat price: %v", err)
+						slog.Error("Billing: failed to create seat price", "error", err)
 						respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 						return
 					}
@@ -235,7 +243,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 			url, err := h.stripe.CreateCheckoutSession(ctx, checkoutReq)
 			if err != nil {
-				log.Printf("Billing: failed to create checkout session: %v", err)
+				slog.Error("Billing: failed to create checkout session", "error", err)
 				respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 				return
 			}
@@ -259,7 +267,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 		customerID, err := h.stripe.GetOrCreateCustomer(ctx, tenant, user.Email)
 		if err != nil {
-			log.Printf("Billing: failed to get/create customer: %v", err)
+			slog.Error("Billing: failed to get/create customer", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 			return
 		}
@@ -277,7 +285,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			AutomaticTax:    automaticTax,
 		})
 		if err != nil {
-			log.Printf("Billing: failed to create checkout session: %v", err)
+			slog.Error("Billing: failed to create checkout session", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 			return
 		}
@@ -306,7 +314,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 		customerID, err := h.stripe.GetOrCreateCustomer(ctx, tenant, user.Email)
 		if err != nil {
-			log.Printf("Billing: failed to get/create customer: %v", err)
+			slog.Error("Billing: failed to get/create customer", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 			return
 		}
@@ -322,7 +330,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			AutomaticTax: automaticTax,
 		})
 		if err != nil {
-			log.Printf("Billing: failed to create checkout session: %v", err)
+			slog.Error("Billing: failed to create checkout session", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to create billing session")
 			return
 		}
@@ -355,7 +363,7 @@ func (h *BillingHandler) Portal(w http.ResponseWriter, r *http.Request) {
 
 	url, err := h.stripe.CreateBillingPortalSession(ctx, tenant.StripeCustomerID)
 	if err != nil {
-		log.Printf("Billing: failed to create portal session: %v", err)
+		slog.Error("Billing: failed to create portal session", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to create portal session")
 		return
 	}
@@ -614,7 +622,7 @@ func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Reque
 
 	periodEnd, err := h.stripe.CancelSubscriptionAtPeriodEnd(ctx, tenant.StripeSubscriptionID)
 	if err != nil {
-		log.Printf("Billing: failed to cancel subscription: %v", err)
+		slog.Error("Billing: failed to cancel subscription", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "Failed to cancel subscription")
 		return
 	}
@@ -641,6 +649,20 @@ func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Reque
 			"reason":     "user_initiated",
 		},
 	})
+
+	if h.telemetrySvc != nil {
+		user, _ := middleware.GetUserFromContext(ctx)
+		var userIDPtr *primitive.ObjectID
+		if user != nil {
+			userIDPtr = &user.ID
+		}
+		h.telemetrySvc.Track(ctx, models.TelemetryEvent{
+			EventName: models.TelemetrySubscriptionCanceled,
+			Category:  models.TelemetryCategoryFunnel,
+			UserID:    userIDPtr,
+			TenantID:  &tenant.ID,
+		})
+	}
 
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"message":          "Subscription will cancel at end of billing period",
@@ -922,7 +944,7 @@ func (h *BillingHandler) AdminCancelSubscription(w http.ResponseWriter, r *http.
 	now := time.Now()
 	if req.Immediate {
 		if err := h.stripe.CancelSubscriptionImmediately(ctx, tenant.StripeSubscriptionID); err != nil {
-			log.Printf("Admin: failed to cancel subscription immediately: %v", err)
+			slog.Error("Admin: failed to cancel subscription immediately", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to cancel subscription")
 			return
 		}
@@ -930,7 +952,7 @@ func (h *BillingHandler) AdminCancelSubscription(w http.ResponseWriter, r *http.
 	} else {
 		periodEnd, err := h.stripe.CancelSubscriptionAtPeriodEnd(ctx, tenant.StripeSubscriptionID)
 		if err != nil {
-			log.Printf("Admin: failed to cancel subscription: %v", err)
+			slog.Error("Admin: failed to cancel subscription", "error", err)
 			respondWithError(w, http.StatusInternalServerError, "Failed to cancel subscription")
 			return
 		}

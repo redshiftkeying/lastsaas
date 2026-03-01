@@ -3,7 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -281,13 +281,23 @@ func (m *MongoDB) ensureIndexes() {
 				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(90 * 24 * 60 * 60)}, // TTL: 90 days
 			},
 		},
+		{
+			"telemetry_events",
+			[]mongo.IndexModel{
+				{Keys: bson.D{{Key: "eventName", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "category", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "sessionId", Value: 1}, {Key: "createdAt", Value: -1}}},
+				{Keys: bson.D{{Key: "createdAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(365 * 24 * 3600)}, // TTL: 365 days
+			},
+		},
 	}
 
 	for _, idx := range indexes {
 		coll := m.Database.Collection(idx.collection)
 		_, err := coll.Indexes().CreateMany(ctx, idx.models)
 		if err != nil {
-			log.Printf("Warning: failed to create indexes on %s: %v", idx.collection, err)
+			slog.Warn("failed to create indexes", "collection", idx.collection, "error", err)
 		}
 	}
 
@@ -440,4 +450,8 @@ func (m *MongoDB) AuthCodes() *mongo.Collection {
 
 func (m *MongoDB) ImpersonationLogs() *mongo.Collection {
 	return m.Database.Collection("impersonation_logs")
+}
+
+func (m *MongoDB) TelemetryEvents() *mongo.Collection {
+	return m.Database.Collection("telemetry_events")
 }

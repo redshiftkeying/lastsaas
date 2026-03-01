@@ -1,61 +1,51 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Megaphone, Plus, X, Trash2, Eye, EyeOff } from 'lucide-react';
+import { useState } from 'react';
+import { Megaphone, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { adminApi } from '../../api/client';
 import { getErrorMessage } from '../../utils/errors';
 import type { Announcement } from '../../types';
 import TableSkeleton from '../../components/TableSkeleton';
 import ConfirmModal from '../../components/ConfirmModal';
 import { useTenant } from '../../contexts/TenantContext';
+import { Button, Input, Textarea, Badge, Card, Modal } from '../../components/ui';
 
 export default function AnnouncementsPage() {
   const { role } = useTenant();
   const canWrite = role === 'owner' || role === 'admin';
+  const queryClient = useQueryClient();
 
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Announcement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Announcement | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
-  const fetchAnnouncements = useCallback(async () => {
-    try {
-      const data = await adminApi.listAnnouncements();
-      setAnnouncements(data.announcements);
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data, isLoading } = useQuery({
+    queryKey: ['announcements'],
+    queryFn: () => adminApi.listAnnouncements(),
+  });
+  const announcements = data?.announcements ?? [];
 
-  useEffect(() => { fetchAnnouncements(); }, [fetchAnnouncements]);
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await adminApi.deleteAnnouncement(deleteTarget.id);
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => adminApi.deleteAnnouncement(id),
+    onSuccess: () => {
       toast.success('Announcement deleted');
       setDeleteTarget(null);
-      fetchAnnouncements();
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setDeleting(false);
-    }
-  };
+      queryClient.invalidateQueries({ queryKey: ['announcements'] });
+    },
+    onError: (err) => toast.error(getErrorMessage(err)),
+  });
 
-  const togglePublish = async (ann: Announcement) => {
-    try {
-      await adminApi.updateAnnouncement(ann.id, { publish: !ann.isPublished });
+  const toggleMutation = useMutation({
+    mutationFn: (ann: Announcement) => adminApi.updateAnnouncement(ann.id, { publish: !ann.isPublished }),
+    onSuccess: (_data, ann) => {
       toast.success(ann.isPublished ? 'Unpublished' : 'Published');
-      fetchAnnouncements();
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    }
-  };
+      queryClient.invalidateQueries({ queryKey: ['announcements'] });
+    },
+    onError: (err) => toast.error(getErrorMessage(err)),
+  });
 
   return (
     <div>
@@ -68,37 +58,32 @@ export default function AnnouncementsPage() {
           <p className="text-dark-400 mt-1">Manage changelog and announcements for users</p>
         </div>
         {canWrite && (
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white text-sm font-medium rounded-lg hover:bg-primary-600 transition-colors"
-          >
+          <Button onClick={() => setShowCreate(true)} className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             New Announcement
-          </button>
+          </Button>
         )}
       </div>
 
-      {loading ? (
-        <div className="bg-dark-900/50 border border-dark-800 rounded-2xl overflow-hidden">
+      {isLoading ? (
+        <Card padding="none" className="overflow-hidden">
           <TableSkeleton rows={5} cols={4} />
-        </div>
+        </Card>
       ) : announcements.length === 0 ? (
-        <div className="bg-dark-900/50 border border-dark-800 rounded-2xl p-12 text-center text-dark-400">
+        <Card padding="lg" className="text-center text-dark-400">
           No announcements yet
-        </div>
+        </Card>
       ) : (
         <div className="space-y-4">
           {announcements.map(ann => (
-            <div key={ann.id} className="bg-dark-900/50 border border-dark-800 rounded-2xl p-5">
+            <Card key={ann.id} className="p-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="text-white font-semibold truncate">{ann.title}</h3>
-                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                      ann.isPublished ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-dark-700 text-dark-400'
-                    }`}>
+                    <Badge variant={ann.isPublished ? 'success' : 'neutral'}>
                       {ann.isPublished ? 'Published' : 'Draft'}
-                    </span>
+                    </Badge>
                   </div>
                   {ann.body && (
                     <p className="text-sm text-dark-400 line-clamp-2">{ann.body}</p>
@@ -111,18 +96,15 @@ export default function AnnouncementsPage() {
                 {canWrite && (
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => togglePublish(ann)}
+                      onClick={() => toggleMutation.mutate(ann)}
                       className="p-2 text-dark-400 hover:text-white transition-colors"
                       aria-label={ann.isPublished ? 'Unpublish' : 'Publish'}
                     >
                       {ann.isPublished ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
-                    <button
-                      onClick={() => setEditTarget(ann)}
-                      className="px-3 py-1.5 text-xs text-dark-300 hover:text-white bg-dark-800 rounded-lg transition-colors"
-                    >
+                    <Button variant="secondary" size="sm" onClick={() => setEditTarget(ann)}>
                       Edit
-                    </button>
+                    </Button>
                     <button
                       onClick={() => setDeleteTarget(ann)}
                       className="p-2 text-dark-400 hover:text-red-400 transition-colors"
@@ -133,7 +115,7 @@ export default function AnnouncementsPage() {
                   </div>
                 )}
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -142,7 +124,11 @@ export default function AnnouncementsPage() {
         <AnnouncementFormModal
           announcement={editTarget ?? undefined}
           onClose={() => { setShowCreate(false); setEditTarget(null); }}
-          onSaved={() => { setShowCreate(false); setEditTarget(null); fetchAnnouncements(); }}
+          onSaved={() => {
+            setShowCreate(false);
+            setEditTarget(null);
+            queryClient.invalidateQueries({ queryKey: ['announcements'] });
+          }}
         />
       )}
 
@@ -150,102 +136,87 @@ export default function AnnouncementsPage() {
         <ConfirmModal
           open={deleteTarget !== null}
           onClose={() => setDeleteTarget(null)}
-          onConfirm={handleDelete}
+          onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
           title="Delete Announcement"
           message={`Are you sure you want to delete "${deleteTarget?.title}"?`}
           confirmLabel="Delete"
           confirmVariant="danger"
-          loading={deleting}
+          loading={deleteMutation.isPending}
         />
       )}
     </div>
   );
 }
 
+const announcementSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required'),
+  body: z.string().trim().optional().default(''),
+  publish: z.boolean().default(false),
+});
+
+type AnnouncementFormData = z.infer<typeof announcementSchema>;
+
 function AnnouncementFormModal({ announcement, onClose, onSaved }: { announcement?: Announcement; onClose: () => void; onSaved: () => void }) {
   const isEdit = !!announcement;
-  const [title, setTitle] = useState(announcement?.title ?? '');
-  const [body, setBody] = useState(announcement?.body ?? '');
-  const [publish, setPublish] = useState(announcement?.isPublished ?? false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const { register, handleSubmit, formState: { errors } } = useForm<AnnouncementFormData>({
+    resolver: zodResolver(announcementSchema),
+    defaultValues: {
+      title: announcement?.title ?? '',
+      body: announcement?.body ?? '',
+      publish: announcement?.isPublished ?? false,
+    },
+  });
 
-  const handleSave = async () => {
-    if (!title.trim()) { setError('Title is required'); return; }
-    setSaving(true);
-    setError('');
-    try {
+  const mutation = useMutation({
+    mutationFn: (data: AnnouncementFormData) => {
       if (isEdit) {
-        await adminApi.updateAnnouncement(announcement!.id, { title: title.trim(), body: body.trim(), publish });
-      } else {
-        await adminApi.createAnnouncement({ title: title.trim(), body: body.trim(), publish });
+        return adminApi.updateAnnouncement(announcement!.id, { title: data.title, body: data.body, publish: data.publish });
       }
+      return adminApi.createAnnouncement({ title: data.title, body: data.body || '', publish: data.publish });
+    },
+    onSuccess: () => {
       toast.success(isEdit ? 'Announcement updated' : 'Announcement created');
       onSaved();
-    } catch (err: unknown) {
-      setError(getErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
+
+  const onSubmit = handleSubmit((data) => mutation.mutate(data));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-dark-900 rounded-2xl border border-dark-700 p-6 w-full max-w-lg" role="dialog" aria-modal="true">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-white">{isEdit ? 'Edit Announcement' : 'New Announcement'}</h3>
-          <button onClick={onClose} className="p-2 text-dark-400 hover:text-white transition-colors" aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Modal open onClose={onClose} title={isEdit ? 'Edit Announcement' : 'New Announcement'}>
+      <form onSubmit={onSubmit}>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-1">Title</label>
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="What's new?"
-              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-1">Body (Markdown)</label>
-            <textarea
-              value={body}
-              onChange={e => setBody(e.target.value)}
-              rows={6}
-              placeholder="Describe the update..."
-              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm focus:border-primary-500 focus:outline-none resize-none"
-            />
-          </div>
+          <Input
+            label="Title"
+            placeholder="What's new?"
+            error={errors.title?.message}
+            {...register('title')}
+          />
+          <Textarea
+            label="Body (Markdown)"
+            rows={6}
+            placeholder="Describe the update..."
+            {...register('body')}
+          />
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={publish}
-              onChange={e => setPublish(e.target.checked)}
+              {...register('publish')}
               className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-500 focus:ring-primary-500"
             />
             <span className="text-sm text-dark-300">Publish immediately</span>
           </label>
         </div>
 
-        {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
+        {mutation.error && <p className="text-sm text-red-400 mt-3">{getErrorMessage(mutation.error)}</p>}
 
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-dark-400 hover:text-white transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !title.trim()}
-            className="px-4 py-2 bg-primary-500 text-white text-sm font-medium rounded-lg hover:bg-primary-600 disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}
-          </button>
+          <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+          </Button>
         </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }

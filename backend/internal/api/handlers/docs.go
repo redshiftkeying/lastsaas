@@ -878,6 +878,14 @@ func apiReference() []apiSection {
 			Endpoints: []apiEndpoint{
 				{
 					Method:   "GET",
+					Path:     "/api/version",
+					Summary:  "Get API version",
+					Detail:   "Returns the current application version. All API responses also include the version in the <code>X-API-Version</code> response header and a unique <code>X-Request-ID</code> header for tracing.",
+					Auth:     "none",
+					Response: `{"version":"1.00"}`,
+				},
+				{
+					Method:   "GET",
 					Path:     "/health",
 					Summary:  "Health check",
 					Detail:   "Returns a simple health status. Used by load balancers and monitoring services to verify the server is running.",

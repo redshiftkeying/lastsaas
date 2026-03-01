@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { plansApi, billingApi } from '../../api/client';
 import { getErrorMessage } from '../../utils/errors';
 import { useTenant } from '../../contexts/TenantContext';
+import { useTelemetry } from '../../hooks/useTelemetry';
 import type { Plan, EntitlementValue, BillingStatus } from '../../types';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -33,6 +34,8 @@ function annualTotal(cents: number, discountPct: number): number {
 
 export default function PlanPage() {
   const { activeTenant } = useTenant();
+  const { trackPageView } = useTelemetry();
+  useEffect(() => { trackPageView('/plan'); }, [trackPageView]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentPlanId, setCurrentPlanId] = useState('');
   const [billingWaived, setBillingWaived] = useState(false);

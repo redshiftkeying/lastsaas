@@ -55,6 +55,10 @@ func (h *UsageHandler) RecordUsage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"Quantity must be positive"}`, http.StatusBadRequest)
 		return
 	}
+	if req.Quantity > 10000 {
+		http.Error(w, `{"error":"Quantity exceeds maximum of 10000 per request"}`, http.StatusBadRequest)
+		return
+	}
 
 	// Use a MongoDB transaction to atomically deduct credits and record the usage event.
 	// This prevents credits from being deducted without a corresponding usage record.

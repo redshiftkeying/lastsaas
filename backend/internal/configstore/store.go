@@ -2,7 +2,7 @@ package configstore
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -122,7 +122,7 @@ func (s *Store) StartAutoReload(ctx context.Context, interval time.Duration) {
 				return
 			case <-ticker.C:
 				if err := s.Load(ctx); err != nil {
-					log.Printf("configstore: auto-reload failed: %v", err)
+					slog.Warn("configstore: auto-reload failed", "error", err)
 				}
 			}
 		}

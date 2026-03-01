@@ -600,6 +600,79 @@ export interface ImpersonationResponse {
   memberships: MembershipInfo[];
 }
 
+// --- Product Management / Telemetry ---
+
+export interface FunnelStep {
+  name: string;
+  count: number;
+  conversion: number;
+}
+
+export interface FunnelData {
+  uniqueVisitors: number;
+  registrations: number;
+  planPageViews: number;
+  checkoutsStarted: number;
+  paidConversions: number;
+  upgrades: number;
+  steps: FunnelStep[];
+}
+
+export interface CohortRow {
+  cohortLabel: string;
+  cohortSize: number;
+  retention: number[];
+}
+
+export interface FeatureUse {
+  name: string;
+  count: number;
+}
+
+export interface EngagementData {
+  dau: DailyMetricPoint[];
+  wau: DailyMetricPoint[];
+  mau: DailyMetricPoint[];
+  avgSessions: number;
+  topFeatures: FeatureUse[];
+  creditTrend: DailyMetricPoint[];
+}
+
+export interface PlanShare {
+  planName: string;
+  subscribers: number;
+  percentage: number;
+  mrr: number;
+}
+
+export interface KPIData {
+  mrr: number;
+  arr: number;
+  arpu: number;
+  ltv: number;
+  churnRate: number;
+  trialConversionRate: number;
+  timeToFirstPurchase: number;
+  activeSubscribers: number;
+  totalRegistrations: number;
+  planDistribution: PlanShare[];
+  mrrTrend: DailyMetricPoint[];
+  subscriberTrend: DailyMetricPoint[];
+}
+
+export interface CustomEventData {
+  eventName: string;
+  totalCount: number;
+  trend: DailyMetricPoint[];
+}
+
+export interface EventTypeSummary {
+  eventName: string;
+  category: string;
+  count: number;
+  lastSeen: string;
+}
+
 // --- Usage Metering ---
 
 export interface UsageSummaryItem {

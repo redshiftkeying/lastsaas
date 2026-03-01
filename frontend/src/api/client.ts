@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AuthResponse, MFARequiredResponse, AuthProviders, ActiveSession, ActivityLogEntry, PasskeyCredential, ImpersonationResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage, Promotion, EligibleProduct, Announcement, UsageSummary, Invitation } from '../types';
+import type { AuthResponse, MFARequiredResponse, AuthProviders, ActiveSession, ActivityLogEntry, PasskeyCredential, ImpersonationResponse, TenantMember, TenantDetail, TenantListItem, UserListItem, Message, AboutInfo, SystemLog, ConfigVar, UserDetail, UserMembershipDetail, DeletePreflightResponse, Plan, EntitlementKeyInfo, PublicPlansResponse, CreditBundle, SystemNode, SystemMetric, FinancialTransaction, DailyMetricPoint, IntegrationCheck, APIKey, Webhook, WebhookDelivery, WebhookEventTypeInfo, BrandingConfig, MediaItem, CustomPage, Promotion, EligibleProduct, Announcement, UsageSummary, Invitation, FunnelData, CohortRow, EngagementData, KPIData, CustomEventData, EventTypeSummary } from '../types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -23,17 +23,75 @@ export function setTenantHeader(tenantId: string | null) {
   }
 }
 
-// 401 interceptor
+// Silent token refresh: on 401, attempt to use the refresh token to get a new
+// access token and retry the original request. Only falls back to redirect if
+// the refresh itself fails.
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function subscribeToRefresh(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
+function onRefreshComplete(newToken: string) {
+  refreshSubscribers.forEach(cb => cb(newToken));
+  refreshSubscribers = [];
+}
+
+function onRefreshFailed() {
+  refreshSubscribers = [];
+}
+
 api.interceptors.response.use(
   (res) => res,
-  (error) => {
-    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login') && !error.config?.url?.includes('/auth/refresh')) {
+  async (error) => {
+    const originalRequest = error.config;
+    const isAuthRoute = originalRequest?.url?.includes('/auth/login') || originalRequest?.url?.includes('/auth/refresh');
+
+    if (error.response?.status !== 401 || isAuthRoute || originalRequest?._retry) {
+      return Promise.reject(error);
+    }
+
+    const refreshToken = localStorage.getItem('lastsaas_refresh_token');
+    if (!refreshToken) {
+      localStorage.removeItem('lastsaas_access_token');
+      delete api.defaults.headers.common['Authorization'];
+      window.location.href = '/login';
+      return Promise.reject(error);
+    }
+
+    if (isRefreshing) {
+      // Another request is already refreshing — queue this one
+      return new Promise((resolve) => {
+        subscribeToRefresh((newToken: string) => {
+          originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+          originalRequest._retry = true;
+          resolve(api(originalRequest));
+        });
+      });
+    }
+
+    isRefreshing = true;
+    originalRequest._retry = true;
+
+    try {
+      const { data } = await api.post<AuthResponse>('/auth/refresh', { refreshToken });
+      localStorage.setItem('lastsaas_access_token', data.accessToken);
+      localStorage.setItem('lastsaas_refresh_token', data.refreshToken);
+      setAuthToken(data.accessToken);
+      onRefreshComplete(data.accessToken);
+      originalRequest.headers['Authorization'] = `Bearer ${data.accessToken}`;
+      return api(originalRequest);
+    } catch {
+      onRefreshFailed();
       localStorage.removeItem('lastsaas_access_token');
       localStorage.removeItem('lastsaas_refresh_token');
       delete api.defaults.headers.common['Authorization'];
       window.location.href = '/login';
+      return Promise.reject(error);
+    } finally {
+      isRefreshing = false;
     }
-    return Promise.reject(error);
   }
 );
 
@@ -414,6 +472,32 @@ export const brandingAdminApi = {
     api.put(`/admin/branding/pages/${id}`, data).then(r => r.data),
   deletePage: (id: string) =>
     api.delete(`/admin/branding/pages/${id}`).then(r => r.data),
+};
+
+// --- PM Dashboard ---
+export const pmApi = {
+  getFunnel: (params?: { range?: string }) =>
+    api.get<FunnelData>('/admin/pm/funnel', { params }).then(r => r.data),
+  getRetention: (params?: { granularity?: string; periods?: number }) =>
+    api.get<{ granularity: string; periods: number; cohorts: CohortRow[] }>('/admin/pm/retention', { params }).then(r => r.data),
+  getEngagement: (params?: { range?: string }) =>
+    api.get<EngagementData>('/admin/pm/engagement', { params }).then(r => r.data),
+  getKPIs: () =>
+    api.get<KPIData>('/admin/pm/kpis').then(r => r.data),
+  getCustomEvents: (params?: { name?: string; range?: string }) =>
+    api.get<CustomEventData>('/admin/pm/events', { params }).then(r => r.data),
+  listEventTypes: () =>
+    api.get<{ eventTypes: EventTypeSummary[] }>('/admin/pm/events/types').then(r => r.data),
+};
+
+// --- Telemetry ---
+export const telemetryApi = {
+  trackAnonymous: (data: { sessionId: string; event: string; properties?: Record<string, unknown> }) =>
+    api.post('/telemetry/track', data).then(r => r.data),
+  trackEvent: (data: { event: string; properties?: Record<string, unknown> }) =>
+    api.post('/telemetry/events', data).then(r => r.data),
+  trackBatch: (events: { event: string; properties?: Record<string, unknown> }[]) =>
+    api.post('/telemetry/events/batch', { events }).then(r => r.data),
 };
 
 export default api;

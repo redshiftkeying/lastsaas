@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -614,7 +614,7 @@ func (h *PlansHandler) AssignPlan(w http.ResponseWriter, r *http.Request) {
 		if tenant.StripeSubscriptionID != "" && (tenant.BillingStatus == models.BillingStatusActive || tenant.BillingStatus == models.BillingStatusPastDue) {
 			if h.stripe != nil {
 				if err := h.stripe.CancelSubscriptionImmediately(ctx, tenant.StripeSubscriptionID); err != nil {
-					log.Printf("AssignPlan: failed to cancel subscription for tenant %s: %v", tenant.Name, err)
+					slog.Error("AssignPlan: failed to cancel subscription", "tenant", tenant.Name, "error", err)
 					respondWithError(w, http.StatusInternalServerError, "Failed to cancel existing subscription")
 					return
 				}

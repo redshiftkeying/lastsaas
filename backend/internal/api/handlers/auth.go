@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -18,6 +18,7 @@ import (
 	"lastsaas/internal/middleware"
 	"lastsaas/internal/models"
 	"lastsaas/internal/syslog"
+	"lastsaas/internal/telemetry"
 	"lastsaas/internal/validation"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -39,6 +40,7 @@ type AuthHandler struct {
 	syslog          *syslog.Logger
 	getConfig       func(string) string
 	rateLimiter     *middleware.RateLimiter
+	telemetrySvc    *telemetry.Service
 }
 
 func NewAuthHandler(
@@ -68,6 +70,12 @@ func (h *AuthHandler) SetGitHubOAuth(svc *auth.GitHubOAuthService)       { h.git
 func (h *AuthHandler) SetMicrosoftOAuth(svc *auth.MicrosoftOAuthService) { h.microsoftOAuth = svc }
 func (h *AuthHandler) SetGetConfig(fn func(string) string)               { h.getConfig = fn }
 func (h *AuthHandler) SetRateLimiter(rl *middleware.RateLimiter)          { h.rateLimiter = rl }
+func (h *AuthHandler) SetTelemetry(svc *telemetry.Service)               { h.telemetrySvc = svc }
+func (h *AuthHandler) SetTOTPEncryptionKey(key []byte) {
+	if len(key) == 32 {
+		h.totpService = auth.NewTOTPServiceWithEncryption(key)
+	}
+}
 
 // --- Request/Response types ---
 
@@ -216,7 +224,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	invitationAccepted := false
 	if req.InvitationToken != "" {
 		if err := h.acceptInvitationForUser(r.Context(), user.ID, req.InvitationToken); err != nil {
-			log.Printf("Failed to accept invitation during registration: %v", err)
+			slog.Error("Failed to accept invitation during registration", "error", err)
 		} else {
 			invitationAccepted = true
 		}
@@ -250,6 +258,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Data:      map[string]interface{}{"userId": user.ID.Hex()},
 	})
 
+	if h.telemetrySvc != nil {
+		h.telemetrySvc.Track(r.Context(), models.TelemetryEvent{
+			EventName: models.TelemetryUserRegistered,
+			Category:  models.TelemetryCategoryFunnel,
+			UserID:    &user.ID,
+		})
+	}
+
 	respondWithJSON(w, http.StatusCreated, AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -274,6 +290,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var user models.User
 	if err := h.db.Users().FindOne(r.Context(), bson.M{"email": req.Email}).Decode(&user); err != nil {
+		// Perform dummy bcrypt to equalize response timing and prevent account enumeration
+		h.passwordService.DummyCompare(req.Password)
 		respondWithError(w, http.StatusUnauthorized, "Invalid email or password")
 		return
 	}
@@ -374,6 +392,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	h.syslog.LogCatWithUser(r.Context(), models.LogLow, models.LogCatAuth,
 		fmt.Sprintf("User logged in: %s", user.Email), user.ID)
 
+	if h.telemetrySvc != nil {
+		h.telemetrySvc.TrackLogin(r.Context(), user.ID)
+	}
+
 	respondWithJSON(w, http.StatusOK, AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -449,7 +471,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 				bson.M{"familyId": storedToken.FamilyID},
 				bson.M{"$set": bson.M{"isRevoked": true}},
 			)
-			log.Printf("Security: refresh token replay detected for user %s, family %s revoked", storedToken.UserID.Hex(), storedToken.FamilyID)
+			slog.Warn("Security: refresh token replay detected, family revoked", "userId", storedToken.UserID.Hex(), "familyId", storedToken.FamilyID)
 		}
 		respondWithError(w, http.StatusUnauthorized, "Refresh token has been revoked")
 		return
@@ -552,6 +574,14 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		Data:      map[string]interface{}{"userId": token.UserID.Hex()},
 	})
 
+	if h.telemetrySvc != nil {
+		h.telemetrySvc.Track(r.Context(), models.TelemetryEvent{
+			EventName: models.TelemetryUserVerified,
+			Category:  models.TelemetryCategoryFunnel,
+			UserID:    &token.UserID,
+		})
+	}
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Email verified successfully"})
 }
 
@@ -609,11 +639,18 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Revoke any previous unused password reset tokens for this user
+	h.db.VerificationTokens().UpdateMany(r.Context(),
+		bson.M{"userId": user.ID, "type": models.TokenTypePasswordReset, "usedAt": nil},
+		bson.M{"$set": bson.M{"usedAt": time.Now()}},
+	)
+
 	resetToken := generateRandomToken()
+	hashedToken := hashToken(resetToken)
 	verification := models.VerificationToken{
 		ID:        primitive.NewObjectID(),
 		UserID:    user.ID,
-		Token:     resetToken,
+		Token:     hashedToken,
 		Type:      models.TokenTypePasswordReset,
 		ExpiresAt: time.Now().Add(30 * time.Minute),
 		CreatedAt: time.Now(),
@@ -626,7 +663,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		_ = ctx // timeout guard for background goroutine
 		if h.emailService != nil {
 			if err := h.emailService.SendPasswordResetEmail(user.Email, user.DisplayName, resetToken); err != nil {
-				log.Printf("Failed to send password reset email: %v", err)
+				slog.Error("Failed to send password reset email", "error", err)
 			}
 		}
 	}()
@@ -651,11 +688,12 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 
+	hashedToken := hashToken(req.Token)
 	var token models.VerificationToken
 	err := h.db.VerificationTokens().FindOneAndUpdate(
 		r.Context(),
 		bson.M{
-			"token":     req.Token,
+			"token":     hashedToken,
 			"type":      models.TokenTypePasswordReset,
 			"usedAt":    nil,
 			"expiresAt": bson.M{"$gt": now},
@@ -783,9 +821,14 @@ func (h *AuthHandler) MFASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store secret temporarily (not yet enabled)
+	// Encrypt and store secret temporarily (not yet enabled)
+	encryptedSecret, err := h.totpService.EncryptSecret(key.Secret())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to secure MFA secret")
+		return
+	}
 	h.db.Users().UpdateOne(r.Context(), bson.M{"_id": user.ID}, bson.M{
-		"$set": bson.M{"totpSecret": key.Secret(), "updatedAt": time.Now()},
+		"$set": bson.M{"totpSecret": encryptedSecret, "updatedAt": time.Now()},
 	})
 
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
@@ -821,7 +864,8 @@ func (h *AuthHandler) MFAVerifySetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.totpService.ValidateCodeWithWindow(freshUser.TOTPSecret, req.Code) {
+	decryptedSecret := h.totpService.DecryptSecret(freshUser.TOTPSecret)
+	if !h.totpService.ValidateCodeWithWindow(decryptedSecret, req.Code) {
 		respondWithError(w, http.StatusUnauthorized, "Invalid verification code")
 		return
 	}
@@ -878,7 +922,7 @@ func (h *AuthHandler) MFADisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try TOTP code first, then recovery code
-	valid := h.totpService.ValidateCodeWithWindow(freshUser.TOTPSecret, req.Code)
+	valid := h.totpService.ValidateCodeWithWindow(h.totpService.DecryptSecret(freshUser.TOTPSecret), req.Code)
 	if !valid {
 		_, valid = h.totpService.ValidateRecoveryCode(req.Code, freshUser.RecoveryCodes)
 	}
@@ -921,7 +965,7 @@ func (h *AuthHandler) MFAChallenge(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusUnauthorized, "Invalid or expired MFA token")
 		return
 	}
-	if !claims.MFAPending {
+	if claims.TokenType != "mfa" || !claims.MFAPending {
 		respondWithError(w, http.StatusUnauthorized, "Invalid MFA token")
 		return
 	}
@@ -939,7 +983,7 @@ func (h *AuthHandler) MFAChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate TOTP code or recovery code
-	valid := h.totpService.ValidateCodeWithWindow(user.TOTPSecret, req.Code)
+	valid := h.totpService.ValidateCodeWithWindow(h.totpService.DecryptSecret(user.TOTPSecret), req.Code)
 	recoveryIdx := -1
 	if !valid {
 		recoveryIdx, valid = h.totpService.ValidateRecoveryCode(req.Code, user.RecoveryCodes)
@@ -951,13 +995,10 @@ func (h *AuthHandler) MFAChallenge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If recovery code was used, remove it
+	// If recovery code was used, remove it atomically
 	if recoveryIdx >= 0 {
-		codes := user.RecoveryCodes
-		codes[recoveryIdx] = codes[len(codes)-1]
-		codes = codes[:len(codes)-1]
 		h.db.Users().UpdateOne(r.Context(), bson.M{"_id": user.ID}, bson.M{
-			"$set": bson.M{"recoveryCodes": codes},
+			"$pull": bson.M{"recoveryCodes": user.RecoveryCodes[recoveryIdx]},
 		})
 	}
 
@@ -1020,7 +1061,7 @@ func (h *AuthHandler) MFARegenerateRecoveryCodes(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if !h.totpService.ValidateCodeWithWindow(freshUser.TOTPSecret, req.Code) {
+	if !h.totpService.ValidateCodeWithWindow(h.totpService.DecryptSecret(freshUser.TOTPSecret), req.Code) {
 		respondWithError(w, http.StatusUnauthorized, "Invalid code")
 		return
 	}
@@ -1074,10 +1115,11 @@ func (h *AuthHandler) MagicLinkRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	magicToken := generateRandomToken()
+	hashedMagicToken := hashToken(magicToken)
 	verification := models.VerificationToken{
 		ID:        primitive.NewObjectID(),
 		UserID:    user.ID,
-		Token:     magicToken,
+		Token:     hashedMagicToken,
 		Type:      models.TokenTypeMagicLink,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 		CreatedAt: time.Now(),
@@ -1090,7 +1132,7 @@ func (h *AuthHandler) MagicLinkRequest(w http.ResponseWriter, r *http.Request) {
 		_ = ctx // timeout guard for background goroutine
 		if h.emailService != nil {
 			if err := h.emailService.SendMagicLinkEmail(user.Email, user.DisplayName, magicToken); err != nil {
-				log.Printf("Failed to send magic link email: %v", err)
+				slog.Error("Failed to send magic link email", "error", err)
 			}
 		}
 	}()
@@ -1112,11 +1154,12 @@ func (h *AuthHandler) MagicLinkVerify(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 
+	hashedToken := hashToken(req.Token)
 	var token models.VerificationToken
 	err := h.db.VerificationTokens().FindOneAndUpdate(
 		r.Context(),
 		bson.M{
-			"token":     req.Token,
+			"token":     hashedToken,
 			"type":      models.TokenTypeMagicLink,
 			"usedAt":    nil,
 			"expiresAt": bson.M{"$gt": now},
@@ -1446,6 +1489,11 @@ func (h *AuthHandler) GitHubOAuthCallback(w http.ResponseWriter, r *http.Request
 			h.createPersonalTenant(r.Context(), user.ID, user.DisplayName, now)
 			h.syslog.High(r.Context(), fmt.Sprintf("User created: %s (%s) via GitHub OAuth", user.Email, user.ID.Hex()))
 		} else {
+			// Only link GitHub to existing account if user has verified their email
+			if !user.EmailVerified {
+				http.Redirect(w, r, h.frontendURL+"/login?error=email_not_verified", http.StatusTemporaryRedirect)
+				return
+			}
 			h.db.Users().UpdateOne(r.Context(), bson.M{"_id": user.ID}, bson.M{
 				"$set":      bson.M{"githubId": ghIDStr, "lastLoginAt": now, "updatedAt": now},
 				"$addToSet": bson.M{"authMethods": models.AuthMethodGitHub},
@@ -1581,6 +1629,11 @@ func (h *AuthHandler) MicrosoftOAuthCallback(w http.ResponseWriter, r *http.Requ
 			h.createPersonalTenant(r.Context(), user.ID, user.DisplayName, now)
 			h.syslog.High(r.Context(), fmt.Sprintf("User created: %s (%s) via Microsoft OAuth", user.Email, user.ID.Hex()))
 		} else {
+			// Only link Microsoft to existing account if user has verified their email
+			if !user.EmailVerified {
+				http.Redirect(w, r, h.frontendURL+"/login?error=email_not_verified", http.StatusTemporaryRedirect)
+				return
+			}
 			h.db.Users().UpdateOne(r.Context(), bson.M{"_id": user.ID}, bson.M{
 				"$set":      bson.M{"microsoftId": msUser.ID, "lastLoginAt": now, "updatedAt": now},
 				"$addToSet": bson.M{"authMethods": models.AuthMethodMicrosoft},
@@ -1829,7 +1882,7 @@ func (h *AuthHandler) createPersonalTenant(ctx context.Context, userID primitive
 		UpdatedAt:     now,
 	}
 	if _, err := h.db.Tenants().InsertOne(ctx, tenant); err != nil {
-		log.Printf("Failed to create personal tenant for user %s: %v", userID.Hex(), err)
+		slog.Error("Failed to create personal tenant", "userId", userID.Hex(), "error", err)
 		return
 	}
 
@@ -1842,7 +1895,7 @@ func (h *AuthHandler) createPersonalTenant(ctx context.Context, userID primitive
 		UpdatedAt: now,
 	}
 	if _, err := h.db.TenantMemberships().InsertOne(ctx, membership); err != nil {
-		log.Printf("Failed to create membership for personal tenant: %v", err)
+		slog.Error("Failed to create membership for personal tenant", "error", err)
 	}
 
 	h.events.Emit(events.Event{
@@ -1875,10 +1928,10 @@ func (h *AuthHandler) sendVerificationEmail(ctx context.Context, userID primitiv
 		_ = ctx // timeout guard for background goroutine
 		if h.emailService != nil {
 			if err := h.emailService.SendVerificationEmail(userEmail, displayName, verificationToken); err != nil {
-				log.Printf("Failed to send verification email to %s: %v", userEmail, err)
+				slog.Error("Failed to send verification email", "to", userEmail, "error", err)
 			}
 		} else {
-			log.Printf("Email service not configured. Verification token for %s: %s", userEmail, verificationToken)
+			slog.Warn("Email service not configured, logging verification token", "email", userEmail, "token", verificationToken)
 		}
 	}()
 }
@@ -1999,31 +2052,16 @@ func storeRefreshToken(r *http.Request, database *db.MongoDB, userID primitive.O
 		fid = familyID[0]
 	}
 
-	rt := models.RefreshToken{
-		ID:           primitive.NewObjectID(),
-		UserID:       userID,
-		TokenHash:    tokenHash,
-		FamilyID:     fid,
-		IPAddress:    middleware.GetClientIP(r),
-		UserAgent:    r.UserAgent(),
-		DeviceInfo:   auth.ParseUserAgent(r.UserAgent()),
-		ExpiresAt:    now.Add(ttl),
-		CreatedAt:    now,
-		LastActiveAt: now,
-		IsRevoked:    false,
-	}
-	database.RefreshTokens().InsertOne(r.Context(), rt)
-
-	// Enforce concurrent session limit (max 10 active sessions per user)
+	// Enforce concurrent session limit BEFORE inserting new token
 	const maxSessions = 10
 	activeCount, _ := database.RefreshTokens().CountDocuments(r.Context(), bson.M{
 		"userId":    userID,
 		"isRevoked": false,
 		"expiresAt": bson.M{"$gt": now},
 	})
-	if activeCount > maxSessions {
-		// Find and revoke the oldest excess sessions
-		excess := activeCount - maxSessions
+	if activeCount >= maxSessions {
+		// Revoke oldest sessions to make room
+		excess := activeCount - maxSessions + 1
 		cursor, err := database.RefreshTokens().Find(r.Context(),
 			bson.M{"userId": userID, "isRevoked": false, "expiresAt": bson.M{"$gt": now}},
 			options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}).SetLimit(excess),
@@ -2040,6 +2078,21 @@ func storeRefreshToken(r *http.Request, database *db.MongoDB, userID primitive.O
 			}
 		}
 	}
+
+	rt := models.RefreshToken{
+		ID:           primitive.NewObjectID(),
+		UserID:       userID,
+		TokenHash:    tokenHash,
+		FamilyID:     fid,
+		IPAddress:    middleware.GetClientIP(r),
+		UserAgent:    r.UserAgent(),
+		DeviceInfo:   auth.ParseUserAgent(r.UserAgent()),
+		ExpiresAt:    now.Add(ttl),
+		CreatedAt:    now,
+		LastActiveAt: now,
+		IsRevoked:    false,
+	}
+	database.RefreshTokens().InsertOne(r.Context(), rt)
 }
 
 // DeleteAccount allows users to delete their own account after password confirmation.
