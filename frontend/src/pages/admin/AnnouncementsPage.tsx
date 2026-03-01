@@ -150,8 +150,8 @@ export default function AnnouncementsPage() {
 
 const announcementSchema = z.object({
   title: z.string().trim().min(1, 'Title is required'),
-  body: z.string().trim().default(''),
-  publish: z.boolean().default(false),
+  body: z.string().trim(),
+  publish: z.boolean(),
 });
 
 type AnnouncementFormData = z.infer<typeof announcementSchema>;
