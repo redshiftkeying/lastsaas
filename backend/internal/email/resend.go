@@ -46,6 +46,9 @@ func NewResendService(apiKey, fromEmail, fromName, appName, frontendURL string, 
 }
 
 func (s *ResendService) from() string {
+	if s.fromName == "" {
+		return s.fromEmail
+	}
 	return fmt.Sprintf("%s <%s>", s.fromName, s.fromEmail)
 }
 

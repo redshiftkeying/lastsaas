@@ -1,19 +1,27 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
+	"lastsaas/internal/email"
 	"lastsaas/internal/health"
 	"lastsaas/internal/models"
 )
 
 type HealthHandler struct {
-	service *health.Service
+	service      *health.Service
+	emailService *email.ResendService
 }
 
 func NewHealthHandler(service *health.Service) *HealthHandler {
 	return &HealthHandler{service: service}
+}
+
+func (h *HealthHandler) SetEmailService(svc *email.ResendService) {
+	h.emailService = svc
 }
 
 // ListNodes handles GET /api/admin/health/nodes
@@ -93,6 +101,48 @@ func (h *HealthHandler) GetIntegrations(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{"integrations": results})
+}
+
+// SendTestEmail handles POST /api/admin/health/test-email
+func (h *HealthHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
+	if h.emailService == nil {
+		respondWithError(w, http.StatusBadRequest, "Email service not configured")
+		return
+	}
+
+	var req struct {
+		To string `json:"to"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if !isValidEmail(req.To) {
+		respondWithError(w, http.StatusBadRequest, "Invalid email address")
+		return
+	}
+
+	subject := "Test Email"
+	body := fmt.Sprintf(
+		`<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+			<h2 style="margin: 0 0 12px;">Email Delivery Test</h2>
+			<p style="color: #555;">This is a test email sent from the admin health dashboard.</p>
+			<p style="color: #555;">If you received this, your email configuration is working correctly.</p>
+			<hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+			<p style="font-size: 12px; color: #999;">Sent at %s</p>
+		</div>`, time.Now().UTC().Format(time.RFC3339))
+
+	if err := h.emailService.SendEmail(req.To, subject, body); err != nil {
+		respondWithJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+	})
 }
 
 func parseTimeRange(rangeStr string, to time.Time) time.Time {

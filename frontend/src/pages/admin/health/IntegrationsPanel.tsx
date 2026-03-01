@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Database, CreditCard, Mail, Plug, HelpCircle, X, ExternalLink, LogIn, Github, Fingerprint, KeyRound } from 'lucide-react';
+import { Database, CreditCard, Mail, Plug, HelpCircle, X, ExternalLink, LogIn, Github, Fingerprint, KeyRound, Send } from 'lucide-react';
 import type { IntegrationCheck } from '../../../types';
+import { adminApi } from '../../../api/client';
 
 const ICONS: Record<string, typeof Database> = {
   mongodb: Database,
@@ -177,8 +178,77 @@ function SetupModal({ name, setupHelp, onClose }: { name: string; setupHelp: Rec
   );
 }
 
+function SendTestEmailModal({ onClose }: { onClose: () => void }) {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; error?: string } | null>(null);
+
+  const handleSend = async () => {
+    if (!email.trim()) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await adminApi.sendTestEmail(email.trim());
+      setResult({ success: !!res.success, error: res.error });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send test email';
+      setResult({ success: false, error: msg });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-dark-900 border border-dark-700 rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-dark-800">
+          <h3 className="text-lg font-semibold text-white">Send Test Email</h3>
+          <button onClick={onClose} className="text-dark-400 hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-dark-300 mb-1.5">Recipient email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !loading) handleSend(); }}
+              placeholder="you@example.com"
+              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg text-white text-sm placeholder-dark-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              autoFocus
+              disabled={loading}
+            />
+          </div>
+          <button
+            onClick={handleSend}
+            disabled={loading || !email.trim()}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium text-white transition-colors"
+          >
+            <Send className="w-4 h-4" />
+            {loading ? 'Sending...' : 'Send Test Email'}
+          </button>
+          {result && (
+            <div className={`p-3 rounded-lg text-sm ${
+              result.success
+                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                : 'bg-red-500/10 border border-red-500/20 text-red-400'
+            }`}>
+              {result.success
+                ? 'Test email sent successfully. Check your inbox.'
+                : `Failed to send: ${result.error}`}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function IntegrationsPanel({ integrations }: { integrations: IntegrationCheck[] }) {
   const [helpFor, setHelpFor] = useState<string | null>(null);
+  const [showTestEmail, setShowTestEmail] = useState(false);
   const setupHelp = getSetupHelp(window.location.origin);
 
   if (integrations.length === 0) return null;
@@ -198,6 +268,7 @@ export default function IntegrationsPanel({ integrations }: { integrations: Inte
           const isUnhealthy = check.status === 'unhealthy';
           const hasHelp = isNotConfigured && setupHelp[check.name];
           const callsLabel = CALLS_24H_LABEL[check.name];
+          const canTestEmail = check.name === 'resend' && isHealthy;
 
           return (
             <div
@@ -270,12 +341,22 @@ export default function IntegrationsPanel({ integrations }: { integrations: Inte
                   Setup Help
                 </button>
               )}
+              {canTestEmail && (
+                <button
+                  onClick={() => setShowTestEmail(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg text-xs text-emerald-400 transition-colors"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Send Test Email
+                </button>
+              )}
             </div>
           );
         })}
       </div>
 
       {helpFor && <SetupModal name={helpFor} setupHelp={setupHelp} onClose={() => setHelpFor(null)} />}
+      {showTestEmail && <SendTestEmailModal onClose={() => setShowTestEmail(false)} />}
     </div>
   );
 }
