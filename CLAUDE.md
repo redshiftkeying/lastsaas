@@ -26,3 +26,19 @@ Always verify after changes:
 cd backend && go build ./...
 cd frontend && npx tsc --noEmit
 ```
+
+## Dependent Project Deployment (CRITICAL)
+
+Any project built on the LastSaaS boilerplate — whether using it as a Git submodule, fork, or copy — **MUST** deploy using the SaaS Dockerfile (`Dockerfile.saas`) and the corresponding Fly config (`fly.saas.toml`). Never use bare `fly deploy` on a project that depends on LastSaaS.
+
+**Why this matters:** The SaaS Dockerfile runs both the product backend AND the LastSaaS backend behind Caddy (via supervisord). The LastSaaS backend serves all auth endpoints (`/api/auth/*`), bootstrap status (`/api/bootstrap/status`), OAuth providers (Google, etc.), billing, and admin APIs. Without it, login breaks silently — the product backend has no auth routes, so API calls return HTML from the SPA catch-all, causing mysterious redirects to `/setup` or broken login forms with missing OAuth buttons.
+
+**Correct deploy command:**
+```bash
+fly deploy -c fly.saas.toml
+```
+
+**Propagation rule:** When setting up or working on any dependent project, ensure:
+1. The project has a `deploy.md` at its root with full deployment instructions and the "why" behind the multi-process architecture
+2. The project's Claude Code memory (MEMORY.md or CLAUDE.md) contains a cross-reference: "See `deploy.md` — never bare `fly deploy`"
+3. If the project doesn't have these yet, create them before the first deployment
