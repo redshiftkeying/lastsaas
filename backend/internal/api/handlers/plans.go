@@ -90,7 +90,8 @@ func (h *PlansHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
 		result[i].SubscriberCount = subCounts[p.ID]
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"plans": result})
+	total, _ := h.db.Plans().CountDocuments(ctx, bson.M{})
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{"plans": result, "total": total})
 }
 
 // GetPlan returns a single plan by ID.

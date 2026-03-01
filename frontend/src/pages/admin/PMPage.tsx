@@ -19,10 +19,12 @@ const tooltipStyle = { backgroundColor: '#1e293b', border: '1px solid #334155', 
 const tooltipLabelStyle = { color: '#94a3b8' };
 
 function RangeSelector({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
+  const [visual, setVisual] = useState(value);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const debouncedChange = useCallback((r: Range) => {
+  const handleClick = useCallback((r: Range) => {
+    setVisual(r); // immediate visual feedback
     clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => onChange(r), 300);
+    timerRef.current = setTimeout(() => onChange(r), 300); // debounce the fetch
   }, [onChange]);
 
   return (
@@ -30,9 +32,9 @@ function RangeSelector({ value, onChange }: { value: Range; onChange: (r: Range)
       {(['7d', '30d', '90d', '1y'] as const).map(r => (
         <button
           key={r}
-          onClick={() => debouncedChange(r)}
+          onClick={() => handleClick(r)}
           className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-            value === r ? 'bg-dark-700 text-white' : 'text-dark-400 hover:text-dark-300'
+            visual === r ? 'bg-dark-700 text-white' : 'text-dark-400 hover:text-dark-300'
           }`}
         >
           {r}

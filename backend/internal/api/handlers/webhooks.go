@@ -80,7 +80,8 @@ func (h *WebhooksHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"webhooks": result})
+	total, _ := h.db.Webhooks().CountDocuments(ctx, bson.M{"isActive": true})
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{"webhooks": result, "total": total})
 }
 
 // GetWebhook handles GET /api/admin/webhooks/{webhookId}

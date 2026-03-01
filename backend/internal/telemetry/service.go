@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -34,10 +35,11 @@ type Service struct {
 	stopCh  chan struct{}
 	stopped chan struct{}
 
-	// KPI cache
-	kpiMu      sync.Mutex
-	kpiCache   *KPIData
+	// KPI cache (singleflight prevents thundering herd on expiry)
+	kpiMu       sync.Mutex
+	kpiCache    *KPIData
 	kpiCachedAt time.Time
+	kpiGroup    singleflight.Group
 }
 
 // New creates a new telemetry service with async write buffering.
@@ -59,10 +61,11 @@ func (s *Service) Stop() {
 }
 
 // flushLoop batches buffered events and writes them periodically.
+// Uses a timer instead of ticker so it only fires when data is buffered.
 func (s *Service) flushLoop() {
 	defer close(s.stopped)
-	ticker := time.NewTicker(trackFlushInterval)
-	defer ticker.Stop()
+	timer := time.NewTimer(trackFlushInterval)
+	timer.Stop() // start disarmed — only arm when buffer has data
 
 	buf := make([]interface{}, 0, trackBufferSize)
 	flush := func() {
@@ -73,7 +76,8 @@ func (s *Service) flushLoop() {
 		_, err := s.db.TelemetryEvents().InsertMany(ctx, buf)
 		cancel()
 		if err != nil {
-			slog.Warn("telemetry: flush failed", "count", len(buf), "error", err)
+			slog.Warn("telemetry: flush failed, will retry", "count", len(buf), "error", err)
+			return // retain buffer for next attempt
 		}
 		buf = buf[:0]
 	}
@@ -81,13 +85,23 @@ func (s *Service) flushLoop() {
 	for {
 		select {
 		case ev := <-s.trackCh:
+			wasEmpty := len(buf) == 0
 			buf = append(buf, ev)
 			if len(buf) >= trackBufferSize {
 				flush()
 			}
-		case <-ticker.C:
+			// Arm timer when first event enters an empty buffer
+			if wasEmpty && len(buf) > 0 {
+				timer.Reset(trackFlushInterval)
+			}
+		case <-timer.C:
 			flush()
+			// Re-arm if buffer still has data (retry after failed flush)
+			if len(buf) > 0 {
+				timer.Reset(trackFlushInterval)
+			}
 		case <-s.stopCh:
+			timer.Stop()
 			// Drain remaining
 			for {
 				select {
@@ -116,12 +130,9 @@ func (s *Service) Track(ctx context.Context, event models.TelemetryEvent) error 
 	case s.trackCh <- event:
 		return nil
 	default:
-		// Buffer full — fall back to synchronous write
-		_, err := s.db.TelemetryEvents().InsertOne(ctx, event)
-		if err != nil {
-			slog.Warn("telemetry: sync fallback write failed", "event", event.EventName, "error", err)
-		}
-		return err
+		// Buffer full — drop event rather than blocking the caller
+		slog.Warn("telemetry: buffer full, dropping event", "event", event.EventName)
+		return nil
 	}
 }
 
@@ -371,13 +382,12 @@ func (s *Service) RetentionCohorts(ctx context.Context, granularity string, peri
 				},
 			},
 		}}},
-		// Group by cohort, collect lastLoginAt values
+		// Group by cohort, collect only lastLoginAt (createdAt unused in retention loop)
 		{{Key: "$group", Value: bson.M{
 			"_id":        "$cohortIdx",
 			"cohortSize": bson.M{"$sum": 1},
 			"users": bson.M{"$push": bson.M{
 				"lastLoginAt": "$lastLoginAt",
-				"createdAt":   "$createdAt",
 			}},
 		}}},
 		{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
@@ -391,7 +401,6 @@ func (s *Service) RetentionCohorts(ctx context.Context, granularity string, peri
 
 	type userInfo struct {
 		LastLoginAt *time.Time `bson:"lastLoginAt"`
-		CreatedAt   time.Time  `bson:"createdAt"`
 	}
 	type cohortResult struct {
 		CohortIdx  int        `bson:"_id"`
@@ -503,17 +512,22 @@ func (s *Service) KPIs(ctx context.Context) (*KPIData, error) {
 	}
 	s.kpiMu.Unlock()
 
-	result, err := s.computeKPIs(ctx)
+	// singleflight coalesces concurrent callers so only one computes
+	v, err, _ := s.kpiGroup.Do("kpis", func() (interface{}, error) {
+		data, err := s.computeKPIs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		s.kpiMu.Lock()
+		s.kpiCache = data
+		s.kpiCachedAt = time.Now()
+		s.kpiMu.Unlock()
+		return data, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	s.kpiMu.Lock()
-	s.kpiCache = result
-	s.kpiCachedAt = time.Now()
-	s.kpiMu.Unlock()
-
-	return result, nil
+	return v.(*KPIData), nil
 }
 
 func (s *Service) computeKPIs(ctx context.Context) (*KPIData, error) {

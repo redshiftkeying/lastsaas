@@ -57,7 +57,8 @@ func (h *APIKeysHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	if keys == nil {
 		keys = []models.APIKey{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"apiKeys": keys})
+	total, _ := h.db.APIKeys().CountDocuments(r.Context(), bson.M{"isActive": true})
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{"apiKeys": keys, "total": total})
 }
 
 // CreateAPIKey handles POST /api/admin/api-keys
