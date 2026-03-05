@@ -86,8 +86,9 @@ type StripeConfig struct {
 }
 
 type DataDogConfig struct {
-	APIKey string `yaml:"api_key"`
-	Site   string `yaml:"site"` // e.g. "us5.datadoghq.com"
+	APIKey   string `yaml:"api_key"`
+	Site     string `yaml:"site"`     // e.g. "us5.datadoghq.com"
+	Hostname string `yaml:"hostname"` // optional; auto-derived from FLY_APP_NAME if empty
 }
 
 // LoadEnvFile loads a .env file into the process environment if it exists.

@@ -149,7 +149,7 @@ func main() {
 		if site == "" {
 			site = "us5.datadoghq.com"
 		}
-		ddClient = datadog.New(cfg.DataDog.APIKey, site, cfg.Environment, cfg.App.Name)
+		ddClient = datadog.New(cfg.DataDog.APIKey, site, cfg.Environment, cfg.App.Name, cfg.DataDog.Hostname)
 		defer ddClient.Stop()
 		sysLogger.SetOnLog(ddClient.TrackSyslogEntry)
 
@@ -301,6 +301,11 @@ func main() {
 		healthService.RegisterIntegration("datadog", health.NewDataDogChecker(ddClient))
 	} else {
 		healthService.RegisterIntegration("datadog", nil)
+	}
+
+	if ddClient != nil {
+		healthService.SetOnHealthSnapshot(ddClient.TrackHealthSnapshot)
+		healthService.SetOnIntegrationCheck(ddClient.TrackIntegrationChecks)
 	}
 
 	healthService.Start()

@@ -134,6 +134,14 @@ func (s *Service) runIntegrationChecks() {
 		s.intResults[i] = result
 		s.intMu.Unlock()
 	}
+
+	if s.onIntegrationCheck != nil {
+		s.intMu.RLock()
+		results := make([]models.IntegrationCheck, len(s.intResults))
+		copy(results, s.intResults)
+		s.intMu.RUnlock()
+		s.onIntegrationCheck(results)
+	}
 }
 
 // --- Checker factories ---

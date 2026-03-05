@@ -37,6 +37,10 @@ type Service struct {
 	integrations []integrationEntry
 	intMu        sync.RWMutex
 	intResults   []models.IntegrationCheck
+
+	// Optional observers (e.g., DataDog forwarding). Must be non-blocking.
+	onHealthSnapshot   func(models.SystemMetric)
+	onIntegrationCheck func([]models.IntegrationCheck)
 }
 
 // New creates a health monitoring Service.
@@ -77,6 +81,16 @@ func (s *Service) Start() {
 func (s *Service) Stop() {
 	close(s.stopCh)
 	s.wg.Wait()
+}
+
+// SetOnHealthSnapshot registers a callback invoked after each 60s metrics collection.
+func (s *Service) SetOnHealthSnapshot(fn func(models.SystemMetric)) {
+	s.onHealthSnapshot = fn
+}
+
+// SetOnIntegrationCheck registers a callback invoked after each integration check cycle.
+func (s *Service) SetOnIntegrationCheck(fn func([]models.IntegrationCheck)) {
+	s.onIntegrationCheck = fn
 }
 
 func (s *Service) heartbeatLoop() {
@@ -282,6 +296,10 @@ func (s *Service) collectAndStore() {
 
 	if _, err := s.db.SystemMetrics().InsertOne(ctx, metric); err != nil {
 		slog.Error("health: failed to store metrics", "error", err)
+	}
+
+	if s.onHealthSnapshot != nil {
+		s.onHealthSnapshot(metric)
 	}
 }
 

@@ -43,8 +43,8 @@ type Logger struct {
 	db        *db.MongoDB
 	getConfig func(string) string
 
-	// Optional observer for log entries (e.g., DataDog event forwarding).
-	// Only called for critical/high severity. Must be non-blocking.
+	// Optional observer for log entries (e.g., DataDog log + event forwarding).
+	// Called for all severity levels. Must be non-blocking.
 	onLog func(models.SystemLog)
 }
 
@@ -55,7 +55,7 @@ func New(database *db.MongoDB, getConfig func(string) string) *Logger {
 	return &Logger{db: database, getConfig: getConfig}
 }
 
-// SetOnLog registers a callback invoked for critical/high log entries.
+// SetOnLog registers a callback invoked for every log entry.
 // The callback must be non-blocking (e.g., enqueue to a buffered channel).
 func (l *Logger) SetOnLog(fn func(models.SystemLog)) {
 	l.onLog = fn
@@ -98,7 +98,7 @@ func (l *Logger) log(ctx context.Context, severity models.LogSeverity, message s
 		slog.Error("syslog: failed to write log", "error", err)
 	}
 
-	if l.onLog != nil && (severity == models.LogCritical || severity == models.LogHigh) {
+	if l.onLog != nil {
 		l.onLog(entry)
 	}
 
@@ -138,7 +138,7 @@ func (l *Logger) logCategorized(ctx context.Context, severity models.LogSeverity
 		slog.Error("syslog: failed to write log", "error", err)
 	}
 
-	if l.onLog != nil && (severity == models.LogCritical || severity == models.LogHigh) {
+	if l.onLog != nil {
 		l.onLog(entry)
 	}
 
@@ -235,7 +235,7 @@ func (l *Logger) LogTenantActivity(ctx context.Context, severity models.LogSever
 		slog.Error("syslog: failed to write tenant activity log", "error", err)
 	}
 
-	if l.onLog != nil && (severity == models.LogCritical || severity == models.LogHigh) {
+	if l.onLog != nil {
 		l.onLog(entry)
 	}
 }

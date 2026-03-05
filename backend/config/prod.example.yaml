@@ -40,3 +40,4 @@ webhooks:
 datadog:
   api_key: ${DATADOG_API_KEY}
   site: ${DATADOG_SITE:us5.datadoghq.com}
+  hostname: ${DATADOG_HOSTNAME}
