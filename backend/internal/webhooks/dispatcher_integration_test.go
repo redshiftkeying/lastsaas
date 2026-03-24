@@ -41,7 +41,7 @@ func TestDispatcherEmitAndDeliver(t *testing.T) {
 	d.Emit(events.Event{
 		Type:      events.EventTenantCreated,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{"tenantId": "test123"},
+		Data:      map[string]any{"tenantId": "test123"},
 	})
 
 	// Wait for async dispatch
@@ -70,7 +70,7 @@ func TestDispatcherEmitUnmappedEvent(t *testing.T) {
 	d.Emit(events.Event{
 		Type:      events.EventUserLoggedIn,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{},
+		Data:      map[string]any{},
 	})
 
 	time.Sleep(200 * time.Millisecond)
@@ -103,7 +103,7 @@ func TestDispatcherSignature(t *testing.T) {
 	d.Emit(events.Event{
 		Type:      events.EventUserRegistered,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{"email": "new@example.com"},
+		Data:      map[string]any{"email": "new@example.com"},
 	})
 
 	time.Sleep(500 * time.Millisecond)
@@ -144,7 +144,7 @@ func TestDispatcherEncryptedSecret(t *testing.T) {
 	d.Emit(events.Event{
 		Type:      events.EventPaymentReceived,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{"amount": 1000},
+		Data:      map[string]any{"amount": 1000},
 	})
 
 	time.Sleep(500 * time.Millisecond)
@@ -176,7 +176,7 @@ func TestDispatcherRetryOnFailure(t *testing.T) {
 	d.Emit(events.Event{
 		Type:      events.EventPaymentFailed,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{},
+		Data:      map[string]any{},
 	})
 
 	// Wait for initial delivery
@@ -283,7 +283,7 @@ func TestDispatcherNoMatchingWebhooks(t *testing.T) {
 	d.Emit(events.Event{
 		Type:      events.EventUserRegistered,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{"email": "new@example.com"},
+		Data:      map[string]any{"email": "new@example.com"},
 	})
 
 	time.Sleep(500 * time.Millisecond)

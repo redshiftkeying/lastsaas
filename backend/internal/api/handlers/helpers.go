@@ -19,7 +19,7 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-func respondWithJSON(w http.ResponseWriter, status int, payload interface{}) {
+func respondWithJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(payload)

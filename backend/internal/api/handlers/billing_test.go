@@ -247,8 +247,8 @@ func TestIntegration_Checkout_BillingWaiver_FreePlan(t *testing.T) {
 	owner := testutil.CreateTestUser(t, env.DB, "owner@test.com", "Test1234!@#$", "Owner")
 	tenant := testutil.CreateTestTenant(t, env.DB, "TestTenant", owner.ID, false)
 	// Mark tenant as billing waived
-	env.DB.Tenants().UpdateByID(nil, tenant.ID, map[string]interface{}{
-		"$set": map[string]interface{}{"billingWaived": true},
+	env.DB.Tenants().UpdateByID(nil, tenant.ID, map[string]any{
+		"$set": map[string]any{"billingWaived": true},
 	})
 	plan := testutil.CreateTestPlan(t, env.DB, "Free", 0, true)
 

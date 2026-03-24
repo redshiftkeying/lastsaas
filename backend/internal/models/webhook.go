@@ -1,6 +1,7 @@
 package models
 
 import (
+	"slices"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -34,10 +35,10 @@ const (
 	WebhookEventTenantDeactivated WebhookEventType = "tenant.deactivated"
 
 	// Audit & security events (Tier 5)
-	WebhookEventUserDeleted    WebhookEventType = "user.deleted"
-	WebhookEventTenantDeleted  WebhookEventType = "tenant.deleted"
-	WebhookEventAPIKeyCreated  WebhookEventType = "api_key.created"
-	WebhookEventAPIKeyRevoked  WebhookEventType = "api_key.revoked"
+	WebhookEventUserDeleted   WebhookEventType = "user.deleted"
+	WebhookEventTenantDeleted WebhookEventType = "tenant.deleted"
+	WebhookEventAPIKeyCreated WebhookEventType = "api_key.created"
+	WebhookEventAPIKeyRevoked WebhookEventType = "api_key.revoked"
 )
 
 // AllWebhookEventTypes lists every supported webhook event type.
@@ -70,12 +71,7 @@ var AllWebhookEventTypes = []WebhookEventType{
 }
 
 func ValidWebhookEventType(e WebhookEventType) bool {
-	for _, t := range AllWebhookEventTypes {
-		if t == e {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(AllWebhookEventTypes, e)
 }
 
 type Webhook struct {

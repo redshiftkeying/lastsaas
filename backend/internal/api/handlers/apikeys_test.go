@@ -78,7 +78,7 @@ func TestIntegration_CreateAPIKey_Success(t *testing.T) {
 		t.Errorf("expected 201, got %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	json.NewDecoder(resp.Body).Decode(&result)
 	rawKey, ok := result["rawKey"].(string)
 	if !ok || !strings.HasPrefix(rawKey, "lsk_") {

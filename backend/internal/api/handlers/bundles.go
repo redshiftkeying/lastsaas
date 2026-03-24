@@ -73,7 +73,7 @@ func (h *BundlesHandler) ListBundles(w http.ResponseWriter, r *http.Request) {
 		bundles = []models.CreditBundle{}
 	}
 	total, _ := h.db.CreditBundles().CountDocuments(r.Context(), bson.M{})
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"bundles": bundles, "total": total})
+	respondWithJSON(w, http.StatusOK, map[string]any{"bundles": bundles, "total": total})
 }
 
 // CreateBundle creates a new credit bundle.
@@ -233,5 +233,5 @@ func (h *BundlesHandler) ListBundlesPublic(w http.ResponseWriter, r *http.Reques
 	if bundles == nil {
 		bundles = []models.CreditBundle{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"bundles": bundles})
+	respondWithJSON(w, http.StatusOK, map[string]any{"bundles": bundles})
 }

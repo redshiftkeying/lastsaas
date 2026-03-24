@@ -25,11 +25,11 @@ import (
 // loadEnvTest loads the .env.test file into the process environment.
 func loadEnvTest() {
 	dir, _ := os.Getwd()
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		envPath := filepath.Join(dir, ".env.test")
 		data, err := os.ReadFile(envPath)
 		if err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
+			for line := range strings.SplitSeq(string(data), "\n") {
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
 					continue
@@ -142,7 +142,7 @@ func findAndSetConfigDir() {
 		return
 	}
 	dir, _ := os.Getwd()
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		for _, candidate := range []string{
 			filepath.Join(dir, "config"),
 			filepath.Join(dir, "backend", "config"),
@@ -307,7 +307,7 @@ func MarkSystemInitialized(t *testing.T, database *db.MongoDB) {
 func InsertTestLogs(t *testing.T, database *db.MongoDB, count int, severity models.LogSeverity, category models.LogCategory) {
 	t.Helper()
 	ctx := context.Background()
-	for i := 0; i < count; i++ {
+	for i := range count {
 		entry := models.SystemLog{
 			ID:        primitive.NewObjectID(),
 			Severity:  severity,
@@ -334,7 +334,7 @@ func CountDocuments(t *testing.T, database *db.MongoDB, collection string, filte
 }
 
 // ParseJSON decodes a response body into the target struct.
-func ParseJSON(t *testing.T, resp *http.Response, target interface{}) {
+func ParseJSON(t *testing.T, resp *http.Response, target any) {
 	t.Helper()
 	defer resp.Body.Close()
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {

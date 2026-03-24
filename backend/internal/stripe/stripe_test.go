@@ -136,7 +136,7 @@ func TestGetOrCreateCustomerNew(t *testing.T) {
 
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "cus_new123",
 			"object": "customer",
 			"email":  "user@example.com",
@@ -182,17 +182,17 @@ func TestCreateCheckoutSessionSubscription(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/products":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "prod_test123",
 				"object": "product",
 			})
 		case r.URL.Path == "/v1/prices":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "price_test123",
 				"object": "price",
 			})
 		case r.URL.Path == "/v1/checkout/sessions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "cs_test123",
 				"object": "checkout.session",
 				"url":    "https://checkout.stripe.com/pay/cs_test123",
@@ -233,17 +233,17 @@ func TestCreateCheckoutSessionOneTimePayment(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/products":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "prod_bundle",
 				"object": "product",
 			})
 		case r.URL.Path == "/v1/prices":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "price_bundle",
 				"object": "price",
 			})
 		case r.URL.Path == "/v1/checkout/sessions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "cs_bundle",
 				"object": "checkout.session",
 				"url":    "https://checkout.stripe.com/pay/cs_bundle",
@@ -282,7 +282,7 @@ func TestCreateCheckoutSessionWithCustomLineItems(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/checkout/sessions" {
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "cs_custom",
 				"object": "checkout.session",
 				"url":    "https://checkout.stripe.com/pay/cs_custom",
@@ -321,7 +321,7 @@ func TestCreateCheckoutSessionWithCustomLineItems(t *testing.T) {
 func TestCreateBillingPortalSession(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "bps_test",
 			"object": "billing_portal.session",
 			"url":    "https://billing.stripe.com/session/bps_test",
@@ -344,14 +344,14 @@ func TestCreateBillingPortalSession(t *testing.T) {
 func TestCancelSubscriptionAtPeriodEnd(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"id":                "sub_123",
-			"object":            "subscription",
+		json.NewEncoder(w).Encode(map[string]any{
+			"id":                   "sub_123",
+			"object":               "subscription",
 			"cancel_at_period_end": true,
-			"cancel_at":         1735689600,
-			"items": map[string]interface{}{
+			"cancel_at":            1735689600,
+			"items": map[string]any{
 				"object": "list",
-				"data": []map[string]interface{}{
+				"data": []map[string]any{
 					{
 						"id":                 "si_123",
 						"current_period_end": 1735689600,
@@ -377,7 +377,7 @@ func TestCancelSubscriptionAtPeriodEnd(t *testing.T) {
 func TestCancelSubscriptionImmediately(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "sub_123",
 			"object": "subscription",
 			"status": "canceled",
@@ -397,7 +397,7 @@ func TestCancelSubscriptionImmediately(t *testing.T) {
 func TestGetCheckoutSession(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "cs_test123",
 			"object": "checkout.session",
 			"mode":   "subscription",
@@ -450,12 +450,12 @@ func TestGetOrCreatePriceDefaultCurrency(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/products":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "prod_new",
 				"object": "product",
 			})
 		case r.URL.Path == "/v1/prices":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "price_new",
 				"object": "price",
 			})
@@ -482,13 +482,13 @@ func TestUpdateSubscriptionQuantity(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		requestCount++
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "sub_seat",
 			"object": "subscription",
 			"status": "active",
-			"items": map[string]interface{}{
+			"items": map[string]any{
 				"object": "list",
-				"data": []map[string]interface{}{
+				"data": []map[string]any{
 					{
 						"id":     "si_item1",
 						"object": "subscription_item",
@@ -515,13 +515,13 @@ func TestUpdateSubscriptionQuantity(t *testing.T) {
 func TestUpdateSubscriptionQuantityNoItems(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "sub_empty",
 			"object": "subscription",
 			"status": "active",
-			"items": map[string]interface{}{
+			"items": map[string]any{
 				"object": "list",
-				"data":   []map[string]interface{}{},
+				"data":   []map[string]any{},
 			},
 		})
 	})
@@ -539,13 +539,13 @@ func TestUpdateSubscriptionQuantityNoItems(t *testing.T) {
 func TestCancelSubscriptionAtPeriodEndNoItems(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":        "sub_nope",
 			"object":    "subscription",
 			"cancel_at": 0,
-			"items": map[string]interface{}{
+			"items": map[string]any{
 				"object": "list",
-				"data":   []map[string]interface{}{},
+				"data":   []map[string]any{},
 			},
 		})
 	})
@@ -572,17 +572,17 @@ func TestCreateCheckoutSessionWithQuantity(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/v1/products":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "prod_seat",
 				"object": "product",
 			})
 		case r.URL.Path == "/v1/prices":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "price_seat",
 				"object": "price",
 			})
 		case r.URL.Path == "/v1/checkout/sessions":
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"id":     "cs_seat",
 				"object": "checkout.session",
 				"url":    "https://checkout.stripe.com/pay/cs_seat",
@@ -616,13 +616,13 @@ func TestCreateCheckoutSessionWithQuantity(t *testing.T) {
 func TestGetSubscription(t *testing.T) {
 	mock, mockCleanup := setupMockStripe(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"id":     "sub_test123",
 			"object": "subscription",
 			"status": "active",
-			"items": map[string]interface{}{
+			"items": map[string]any{
 				"object": "list",
-				"data":   []map[string]interface{}{},
+				"data":   []map[string]any{},
 			},
 		})
 	})

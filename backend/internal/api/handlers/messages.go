@@ -51,7 +51,7 @@ func (h *MessageHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		messages = []models.Message{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"messages": messages})
+	respondWithJSON(w, http.StatusOK, map[string]any{"messages": messages})
 }
 
 func (h *MessageHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +68,7 @@ func (h *MessageHandler) UnreadCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"count": count})
+	respondWithJSON(w, http.StatusOK, map[string]any{"count": count})
 }
 
 func (h *MessageHandler) MarkRead(w http.ResponseWriter, r *http.Request) {

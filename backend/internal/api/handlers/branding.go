@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -67,15 +68,13 @@ func (h *BrandingHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
 	// Build auth providers from static config + runtime config store
 	authProviders := map[string]bool{"password": true}
 	if h.authProviders != nil {
-		for k, v := range h.authProviders {
-			authProviders[k] = v
-		}
+		maps.Copy(authProviders, h.authProviders)
 	}
 	authProviders["magicLink"] = h.store.Get("auth.magic_link.enabled") == "true"
 	authProviders["passkeys"] = h.store.Get("auth.passkeys.enabled") == "true"
 	authProviders["mfa"] = h.store.Get("auth.mfa.enabled") == "true"
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"appName":          cfg.AppName,
 		"tagline":          cfg.Tagline,
 		"logoMode":         cfg.LogoMode,
@@ -185,7 +184,7 @@ func (h *BrandingHandler) ListPublicPages(w http.ResponseWriter, r *http.Request
 	if pages == nil {
 		pages = []models.CustomPage{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"pages": pages})
+	respondWithJSON(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
 // ---------- Admin endpoints ----------
@@ -199,8 +198,8 @@ func (h *BrandingHandler) UpdateBranding(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Enforce size limits on HTML/CSS fields
-	const maxHTMLSize = 512 * 1024  // 512KB
-	const maxCSSSize = 128 * 1024   // 128KB
+	const maxHTMLSize = 512 * 1024 // 512KB
+	const maxCSSSize = 128 * 1024  // 128KB
 	if len(req.LandingHTML) > maxHTMLSize {
 		respondWithError(w, http.StatusBadRequest, "Landing HTML exceeds 512KB limit")
 		return
@@ -321,7 +320,7 @@ func (h *BrandingHandler) UploadAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.syslog.Critical(r.Context(), fmt.Sprintf("Branding asset uploaded: %s (%s)", key, header.Filename))
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"key":         key,
 		"filename":    header.Filename,
 		"contentType": contentType,
@@ -394,7 +393,7 @@ func (h *BrandingHandler) ListMedia(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:   a.CreatedAt.Format(time.RFC3339),
 		}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"media": items})
+	respondWithJSON(w, http.StatusOK, map[string]any{"media": items})
 }
 
 // UploadMedia handles media file uploads.
@@ -457,7 +456,7 @@ func (h *BrandingHandler) UploadMedia(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.syslog.Low(r.Context(), fmt.Sprintf("Media uploaded: %s (%s, %d bytes)", header.Filename, contentType, len(data)))
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"id":          id.Hex(),
 		"key":         key,
 		"filename":    header.Filename,
@@ -508,7 +507,7 @@ func (h *BrandingHandler) AdminListPages(w http.ResponseWriter, r *http.Request)
 	if pages == nil {
 		pages = []models.CustomPage{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"pages": pages})
+	respondWithJSON(w, http.StatusOK, map[string]any{"pages": pages})
 }
 
 // CreatePage creates a new custom page.

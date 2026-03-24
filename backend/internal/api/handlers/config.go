@@ -34,7 +34,7 @@ func NewConfigHandler(database *db.MongoDB, store *configstore.Store, sysLogger 
 // ListConfig returns all config variables from the cache.
 func (h *ConfigHandler) ListConfig(w http.ResponseWriter, r *http.Request) {
 	vars := h.store.GetAll()
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"configs": vars})
+	respondWithJSON(w, http.StatusOK, map[string]any{"configs": vars})
 }
 
 // GetConfig returns a single config variable by name.
@@ -111,11 +111,11 @@ func (h *ConfigHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 // CreateConfig creates a new custom config variable.
 func (h *ConfigHandler) CreateConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        string              `json:"name"`
-		Description string              `json:"description"`
+		Name        string               `json:"name"`
+		Description string               `json:"description"`
 		Type        models.ConfigVarType `json:"type"`
-		Value       string              `json:"value"`
-		Options     string              `json:"options"`
+		Value       string               `json:"value"`
+		Options     string               `json:"options"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")

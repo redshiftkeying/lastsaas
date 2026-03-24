@@ -28,13 +28,13 @@ const (
 )
 
 type SystemLog struct {
-	ID        primitive.ObjectID     `json:"id" bson:"_id,omitempty"`
-	Severity  LogSeverity            `json:"severity" bson:"severity"`
-	Category  LogCategory            `json:"category,omitempty" bson:"category,omitempty"`
-	Message   string                 `json:"message" bson:"message"`
-	UserID    *primitive.ObjectID    `json:"userId,omitempty" bson:"userId,omitempty"`
-	TenantID  *primitive.ObjectID    `json:"tenantId,omitempty" bson:"tenantId,omitempty"`
-	Action    string                 `json:"action,omitempty" bson:"action,omitempty"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty" bson:"metadata,omitempty"`
-	CreatedAt time.Time              `json:"createdAt" bson:"createdAt"`
+	ID        primitive.ObjectID  `json:"id" bson:"_id,omitempty"`
+	Severity  LogSeverity         `json:"severity" bson:"severity"`
+	Category  LogCategory         `json:"category,omitempty" bson:"category,omitempty"`
+	Message   string              `json:"message" bson:"message"`
+	UserID    *primitive.ObjectID `json:"userId,omitempty" bson:"userId,omitempty"`
+	TenantID  *primitive.ObjectID `json:"tenantId,omitempty" bson:"tenantId,omitempty"`
+	Action    string              `json:"action,omitempty" bson:"action,omitempty"`
+	Metadata  map[string]any      `json:"metadata,omitempty" bson:"metadata,omitempty"`
+	CreatedAt time.Time           `json:"createdAt" bson:"createdAt"`
 }

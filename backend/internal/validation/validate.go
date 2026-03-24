@@ -58,7 +58,7 @@ func init() {
 }
 
 // Validate validates a struct using go-playground/validator tags.
-func Validate(s interface{}) error {
+func Validate(s any) error {
 	err := v.Struct(s)
 	if err == nil {
 		return nil

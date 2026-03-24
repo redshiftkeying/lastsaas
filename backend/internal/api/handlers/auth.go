@@ -70,7 +70,7 @@ func NewAuthHandler(
 func (h *AuthHandler) SetGitHubOAuth(svc *auth.GitHubOAuthService)       { h.githubOAuth = svc }
 func (h *AuthHandler) SetMicrosoftOAuth(svc *auth.MicrosoftOAuthService) { h.microsoftOAuth = svc }
 func (h *AuthHandler) SetGetConfig(fn func(string) string)               { h.getConfig = fn }
-func (h *AuthHandler) SetRateLimiter(rl *middleware.RateLimiter)          { h.rateLimiter = rl }
+func (h *AuthHandler) SetRateLimiter(rl *middleware.RateLimiter)         { h.rateLimiter = rl }
 func (h *AuthHandler) SetTelemetry(svc *telemetry.Service)               { h.telemetrySvc = svc }
 func (h *AuthHandler) SetTOTPEncryptionKey(key []byte) {
 	if len(key) == 32 {
@@ -287,7 +287,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventUserRegistered,
 		Timestamp: now,
-		Data:      map[string]interface{}{"userId": user.ID.Hex()},
+		Data:      map[string]any{"userId": user.ID.Hex()},
 	})
 
 	if h.telemetrySvc != nil {
@@ -417,7 +417,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventUserLoggedIn,
 		Timestamp: now,
-		Data:      map[string]interface{}{"userId": user.ID.Hex()},
+		Data:      map[string]any{"userId": user.ID.Hex()},
 	})
 
 	h.syslog.LogCatWithUser(r.Context(), models.LogLow, models.LogCatAuth,
@@ -567,7 +567,7 @@ func (h *AuthHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 
 	memberships := h.getUserMemberships(r.Context(), user.ID)
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"user":        user,
 		"memberships": memberships,
 	})
@@ -609,7 +609,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventUserVerified,
 		Timestamp: now,
-		Data:      map[string]interface{}{"userId": token.UserID.Hex()},
+		Data:      map[string]any{"userId": token.UserID.Hex()},
 	})
 
 	if h.telemetrySvc != nil {
@@ -879,7 +879,7 @@ func (h *AuthHandler) MFASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"secret": key.Secret(),
 		"qrUrl":  key.URL(),
 	})
@@ -941,7 +941,7 @@ func (h *AuthHandler) MFAVerifySetup(w http.ResponseWriter, r *http.Request) {
 
 	h.syslog.HighWithUser(r.Context(), fmt.Sprintf("MFA enabled for user %s (%s)", user.Email, user.ID.Hex()), user.ID)
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"message":       "MFA enabled successfully",
 		"recoveryCodes": plainCodes,
 	})
@@ -1076,7 +1076,7 @@ func (h *AuthHandler) MFAChallenge(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventUserLoggedIn,
 		Timestamp: now,
-		Data:      map[string]interface{}{"userId": user.ID.Hex()},
+		Data:      map[string]any{"userId": user.ID.Hex()},
 	})
 
 	h.syslog.LogCatWithUser(r.Context(), models.LogLow, models.LogCatAuth,
@@ -1135,7 +1135,7 @@ func (h *AuthHandler) MFARegenerateRecoveryCodes(w http.ResponseWriter, r *http.
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"recoveryCodes": plainCodes,
 	})
 }
@@ -1322,14 +1322,14 @@ func (h *AuthHandler) ExchangeCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if authCode.TokenData.IsMFA {
-		respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		respondWithJSON(w, http.StatusOK, map[string]any{
 			"mfaRequired": true,
 			"mfaToken":    authCode.TokenData.MFAToken,
 		})
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"accessToken":  authCode.TokenData.AccessToken,
 		"refreshToken": authCode.TokenData.RefreshToken,
 	})
@@ -1461,7 +1461,7 @@ func (h *AuthHandler) GoogleOAuthCallback(w http.ResponseWriter, r *http.Request
 		h.events.Emit(events.Event{
 			Type:      events.EventUserRegistered,
 			Timestamp: now,
-			Data:      map[string]interface{}{"userId": user.ID.Hex(), "method": "google"},
+			Data:      map[string]any{"userId": user.ID.Hex(), "method": "google"},
 		})
 	}
 
@@ -1603,7 +1603,7 @@ func (h *AuthHandler) GitHubOAuthCallback(w http.ResponseWriter, r *http.Request
 		h.events.Emit(events.Event{
 			Type:      events.EventUserRegistered,
 			Timestamp: now,
-			Data:      map[string]interface{}{"userId": user.ID.Hex(), "method": "github"},
+			Data:      map[string]any{"userId": user.ID.Hex(), "method": "github"},
 		})
 	}
 
@@ -1750,7 +1750,7 @@ func (h *AuthHandler) MicrosoftOAuthCallback(w http.ResponseWriter, r *http.Requ
 		h.events.Emit(events.Event{
 			Type:      events.EventUserRegistered,
 			Timestamp: now,
-			Data:      map[string]interface{}{"userId": user.ID.Hex(), "method": "microsoft"},
+			Data:      map[string]any{"userId": user.ID.Hex(), "method": "microsoft"},
 		})
 	}
 
@@ -1791,12 +1791,12 @@ func (h *AuthHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type sessionInfo struct {
-		ID           string     `json:"id"`
-		DeviceInfo   string     `json:"deviceInfo"`
-		IPAddress    string     `json:"ipAddress"`
-		CreatedAt    time.Time  `json:"createdAt"`
-		LastActiveAt time.Time  `json:"lastActiveAt"`
-		IsCurrent    bool       `json:"isCurrent"`
+		ID           string    `json:"id"`
+		DeviceInfo   string    `json:"deviceInfo"`
+		IPAddress    string    `json:"ipAddress"`
+		CreatedAt    time.Time `json:"createdAt"`
+		LastActiveAt time.Time `json:"lastActiveAt"`
+		IsCurrent    bool      `json:"isCurrent"`
 	}
 
 	_ = currentTokenHash
@@ -1813,7 +1813,7 @@ func (h *AuthHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"sessions": sessions,
 	})
 }
@@ -1944,7 +1944,7 @@ func (h *AuthHandler) AcceptInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberships := h.getUserMemberships(r.Context(), user.ID)
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"message":     "Invitation accepted",
 		"memberships": memberships,
 	})
@@ -1984,7 +1984,7 @@ func (h *AuthHandler) createPersonalTenant(ctx context.Context, userID primitive
 	h.events.Emit(events.Event{
 		Type:      events.EventTenantCreated,
 		Timestamp: now,
-		Data:      map[string]interface{}{"tenantId": tenant.ID.Hex(), "userId": userID.Hex()},
+		Data:      map[string]any{"tenantId": tenant.ID.Hex(), "userId": userID.Hex()},
 	})
 }
 
@@ -2116,7 +2116,7 @@ func (h *AuthHandler) acceptInvitationForUser(ctx context.Context, userID primit
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberJoined,
 		Timestamp: now,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"userId":   userID.Hex(),
 			"tenantId": invitation.TenantID.Hex(),
 			"role":     string(invitation.Role),
@@ -2266,7 +2266,7 @@ func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 		h.events.Emit(events.Event{
 			Type:      events.EventTenantDeleted,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"tenantId":   m.TenantID.Hex(),
 				"tenantName": tenant.Name,
 				"reason":     "owner_self_deleted",
@@ -2293,7 +2293,7 @@ func (h *AuthHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventUserDeleted,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"userId": user.ID.Hex(),
 			"email":  user.Email,
 			"reason": "self_delete",
@@ -2361,8 +2361,8 @@ func (h *AuthHandler) ExportData(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	export := map[string]interface{}{
-		"profile": map[string]interface{}{
+	export := map[string]any{
+		"profile": map[string]any{
 			"id":            user.ID.Hex(),
 			"email":         user.Email,
 			"displayName":   user.DisplayName,

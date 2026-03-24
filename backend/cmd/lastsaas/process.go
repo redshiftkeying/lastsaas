@@ -221,7 +221,7 @@ func stopService(name, pd string) {
 	syscall.Kill(-pid, syscall.SIGTERM)
 
 	// Wait up to 5 seconds for graceful shutdown
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if !processAlive(pid) {
 			break
 		}

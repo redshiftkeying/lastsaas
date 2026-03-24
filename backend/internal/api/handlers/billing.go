@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"lastsaas/internal/configstore"
@@ -64,10 +64,10 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		PlanID               string `json:"planId"`
-		BundleID             string `json:"bundleId"`
-		BillingInterval      string `json:"billingInterval"`
-		RemoveBillingWaiver  bool   `json:"removeBillingWaiver"`
+		PlanID              string `json:"planId"`
+		BundleID            string `json:"bundleId"`
+		BillingInterval     string `json:"billingInterval"`
+		RemoveBillingWaiver bool   `json:"removeBillingWaiver"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
@@ -136,10 +136,7 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			}
 			if plan.PricingModel == models.PricingModelPerSeat {
 				memberCount, _ := h.db.TenantMemberships().CountDocuments(ctx, bson.M{"tenantId": tenant.ID})
-				seats := int(memberCount)
-				if seats < plan.MinSeats {
-					seats = plan.MinSeats
-				}
+				seats := max(int(memberCount), plan.MinSeats)
 				if seats < 1 {
 					seats = 1
 				}
@@ -149,17 +146,14 @@ func (h *BillingHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 				"$set": setFields,
 				"$inc": bson.M{"purchasedCredits": plan.BonusCredits},
 			})
-			respondWithJSON(w, http.StatusOK, map[string]interface{}{"waived": true})
+			respondWithJSON(w, http.StatusOK, map[string]any{"waived": true})
 			return
 		}
 
 		// Per-seat billing
 		if plan.PricingModel == models.PricingModelPerSeat {
 			memberCount, _ := h.db.TenantMemberships().CountDocuments(ctx, bson.M{"tenantId": tenant.ID})
-			seats := int(memberCount)
-			if seats < plan.MinSeats {
-				seats = plan.MinSeats
-			}
+			seats := max(int(memberCount), plan.MinSeats)
 			if seats < 1 {
 				seats = 1
 			}
@@ -415,7 +409,7 @@ func (h *BillingHandler) ListTransactions(w http.ResponseWriter, r *http.Request
 		transactions = []models.FinancialTransaction{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"transactions": transactions,
 		"total":        total,
 		"page":         page,
@@ -444,9 +438,9 @@ func (h *BillingHandler) GetInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"transaction": tx,
-		"tenant": map[string]interface{}{
+		"tenant": map[string]any{
 			"name": tenant.Name,
 		},
 	})
@@ -643,7 +637,7 @@ func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Reque
 	h.events.Emit(events.Event{
 		Type:      events.EventSubscriptionCanceled,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":   tenant.ID.Hex(),
 			"tenantName": tenant.Name,
 			"reason":     "user_initiated",
@@ -664,7 +658,7 @@ func (h *BillingHandler) CancelSubscription(w http.ResponseWriter, r *http.Reque
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"message":          "Subscription will cancel at end of billing period",
 		"currentPeriodEnd": periodEnd,
 	})
@@ -734,7 +728,7 @@ func (h *BillingHandler) AdminListTransactions(w http.ResponseWriter, r *http.Re
 		transactions = []models.FinancialTransaction{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"transactions": transactions,
 		"total":        total,
 		"page":         page,
@@ -834,7 +828,7 @@ func (h *BillingHandler) AdminGetMetrics(w http.ResponseWriter, r *http.Request)
 		points = []point{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"data": points})
+	respondWithJSON(w, http.StatusOK, map[string]any{"data": points})
 }
 
 // computeLiveMetric returns a real-time value for the given metric.

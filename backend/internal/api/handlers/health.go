@@ -34,7 +34,7 @@ func (h *HealthHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	if nodes == nil {
 		nodes = []models.SystemNode{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"nodes": nodes})
+	respondWithJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
 }
 
 // GetMetrics handles GET /api/admin/health/metrics?node=<id>&range=<1h|6h|24h|7d|30d>
@@ -62,7 +62,7 @@ func (h *HealthHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	if metrics == nil {
 		metrics = []models.SystemMetric{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"metrics": metrics,
 		"from":    from,
 		"to":      to,
@@ -79,7 +79,7 @@ func (h *HealthHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	if metrics == nil {
 		metrics = []models.SystemMetric{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"metrics": metrics})
+	respondWithJSON(w, http.StatusOK, map[string]any{"metrics": metrics})
 }
 
 // GetIntegrations handles GET /api/admin/health/integrations
@@ -100,7 +100,7 @@ func (h *HealthHandler) GetIntegrations(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"integrations": results})
+	respondWithJSON(w, http.StatusOK, map[string]any{"integrations": results})
 }
 
 // SendTestEmail handles POST /api/admin/health/test-email
@@ -133,14 +133,14 @@ func (h *HealthHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		</div>`, time.Now().UTC().Format(time.RFC3339))
 
 	if err := h.emailService.SendEmail(req.To, subject, body); err != nil {
-		respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		respondWithJSON(w, http.StatusOK, map[string]any{
 			"success": false,
 			"error":   err.Error(),
 		})
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"success": true,
 	})
 }

@@ -223,7 +223,7 @@ func TestValidateRecoveryCode_EachCodeMatchesCorrectIndex(t *testing.T) {
 func TestTOTPServiceIsReusable(t *testing.T) {
 	svc := NewTOTPService()
 	// Generate multiple secrets and validate codes
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		key, err := svc.GenerateSecret("App", "user@test.com")
 		if err != nil {
 			t.Fatal(err)

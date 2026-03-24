@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"math"
 	"sort"
 	"sync"
@@ -73,7 +74,7 @@ func (s *Service) flushLoop() {
 	timer := time.NewTimer(backoff)
 	timer.Stop() // start disarmed — only arm when buffer has data
 
-	buf := make([]interface{}, 0, trackBufferSize)
+	buf := make([]any, 0, trackBufferSize)
 	flush := func() bool {
 		if len(buf) == 0 {
 			return true
@@ -171,7 +172,7 @@ func (s *Service) TrackBatch(ctx context.Context, events []models.TelemetryEvent
 	if len(events) == 0 {
 		return nil
 	}
-	docs := make([]interface{}, len(events))
+	docs := make([]any, len(events))
 	now := time.Now()
 	for i := range events {
 		if events[i].ID.IsZero() {
@@ -199,7 +200,7 @@ func (s *Service) TrackPageView(ctx context.Context, sessionID, page string, use
 		Category:   models.TelemetryCategoryFunnel,
 		SessionID:  sessionID,
 		UserID:     userID,
-		Properties: map[string]interface{}{"page": page},
+		Properties: map[string]any{"page": page},
 	})
 }
 
@@ -210,7 +211,7 @@ func (s *Service) TrackCheckoutStarted(ctx context.Context, userID, tenantID pri
 		Category:   models.TelemetryCategoryFunnel,
 		UserID:     &userID,
 		TenantID:   &tenantID,
-		Properties: map[string]interface{}{"planName": planName},
+		Properties: map[string]any{"planName": planName},
 	})
 }
 
@@ -229,7 +230,7 @@ type FunnelData struct {
 	UniqueVisitors   int64        `json:"uniqueVisitors"`
 	Registrations    int64        `json:"registrations"`
 	PlanPageViews    int64        `json:"planPageViews"`
-	CheckoutsStarted int64       `json:"checkoutsStarted"`
+	CheckoutsStarted int64        `json:"checkoutsStarted"`
 	PaidConversions  int64        `json:"paidConversions"`
 	Upgrades         int64        `json:"upgrades"`
 	Steps            []FunnelStep `json:"steps"`
@@ -408,8 +409,8 @@ func (s *Service) RetentionCohorts(ctx context.Context, granularity string, peri
 		{{Key: "$addFields", Value: bson.M{
 			"cohortIdx": bson.M{
 				"$floor": bson.M{
-					"$divide": []interface{}{
-						bson.M{"$subtract": []interface{}{"$createdAt", earliestCohortStart}},
+					"$divide": []any{
+						bson.M{"$subtract": []any{"$createdAt", earliestCohortStart}},
 						intervalMs,
 					},
 				},
@@ -546,7 +547,7 @@ func (s *Service) KPIs(ctx context.Context) (*KPIData, error) {
 	s.kpiMu.Unlock()
 
 	// singleflight coalesces concurrent callers so only one computes
-	v, err, _ := s.kpiGroup.Do("kpis", func() (interface{}, error) {
+	v, err, _ := s.kpiGroup.Do("kpis", func() (any, error) {
 		data, err := s.computeKPIs(ctx)
 		if err != nil {
 			return nil, err
@@ -605,7 +606,7 @@ func (s *Service) computeKPIs(ctx context.Context) (*KPIData, error) {
 		"trialUsedAt": bson.M{"$ne": nil},
 	})
 	convertedTrials, _ := s.db.Tenants().CountDocuments(ctx, bson.M{
-		"trialUsedAt":  bson.M{"$ne": nil},
+		"trialUsedAt":   bson.M{"$ne": nil},
 		"billingStatus": models.BillingStatusActive,
 	})
 	trialConversion := 0.0
@@ -822,7 +823,7 @@ func (s *Service) dailyActiveUsers(ctx context.Context, userIDs []primitive.Obje
 			"createdAt": bson.M{"$gte": start, "$lte": end},
 		}}},
 		{{Key: "$group", Value: bson.M{
-			"_id":   bson.M{"date": bson.M{"$dateToString": bson.M{"format": "%Y-%m-%d", "date": "$createdAt"}}, "userId": "$userId"},
+			"_id": bson.M{"date": bson.M{"$dateToString": bson.M{"format": "%Y-%m-%d", "date": "$createdAt"}}, "userId": "$userId"},
 		}}},
 		{{Key: "$group", Value: bson.M{
 			"_id":   "$_id.date",
@@ -1080,8 +1081,8 @@ func (s *Service) medianTimeToFirstPurchase(ctx context.Context) float64 {
 		{{Key: "$unwind", Value: "$user"}},
 		{{Key: "$project", Value: bson.M{
 			"daysToPurchase": bson.M{
-				"$divide": []interface{}{
-					bson.M{"$subtract": []interface{}{"$firstPurchaseAt", "$user.createdAt"}},
+				"$divide": []any{
+					bson.M{"$subtract": []any{"$firstPurchaseAt", "$user.createdAt"}},
 					86400000, // ms to days
 				},
 			},
@@ -1248,11 +1249,7 @@ func (s *Service) aggregateDailyPoints(ctx context.Context, pipeline mongo.Pipel
 
 func mergeBson(a, b bson.M) bson.M {
 	result := bson.M{}
-	for k, v := range a {
-		result[k] = v
-	}
-	for k, v := range b {
-		result[k] = v
-	}
+	maps.Copy(result, a)
+	maps.Copy(result, b)
 	return result
 }

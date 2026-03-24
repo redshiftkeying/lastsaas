@@ -79,7 +79,7 @@ func cmdDBStats() {
 	}
 
 	if jsonOutput {
-		printJSON(map[string]interface{}{
+		printJSON(map[string]any{
 			"database":    cfg.Database.Name,
 			"collections": stats,
 			"dataSize":    toInt64(dbStats["dataSize"]),
@@ -114,7 +114,7 @@ func cmdDBStats() {
 	}
 }
 
-func toInt64(v interface{}) int64 {
+func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int32:
 		return int64(n)

@@ -111,8 +111,8 @@ func TestIntegration_ListEntitlementKeys_ReturnsKeys(t *testing.T) {
 
 	// Create a plan with entitlements directly in DB
 	plan := testutil.CreateTestPlan(t, env.DB, "Entitlement Plan", 999, false)
-	env.DB.Plans().UpdateByID(nil, plan.ID, map[string]interface{}{
-		"$set": map[string]interface{}{
+	env.DB.Plans().UpdateByID(nil, plan.ID, map[string]any{
+		"$set": map[string]any{
 			"entitlements": map[string]models.EntitlementValue{
 				"api_access": {Type: models.EntitlementTypeBool, BoolValue: true},
 				"max_users":  {Type: models.EntitlementTypeNumeric, NumericValue: 100},
@@ -354,7 +354,7 @@ func TestIntegration_UnarchivePlan_Success(t *testing.T) {
 
 	plan := testutil.CreateTestPlan(t, env.DB, "Unarchive Me", 499, false)
 	// Archive first
-	env.DB.Plans().UpdateByID(nil, plan.ID, map[string]interface{}{"$set": map[string]interface{}{"isArchived": true}})
+	env.DB.Plans().UpdateByID(nil, plan.ID, map[string]any{"$set": map[string]any{"isArchived": true}})
 
 	req := env.adminRequest(t, "POST", "/api/admin/plans/"+plan.ID.Hex()+"/unarchive", nil, owner, rootTenant.ID.Hex())
 	resp, err := env.Client.Do(req)

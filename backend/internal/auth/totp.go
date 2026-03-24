@@ -105,7 +105,7 @@ func (s *TOTPService) ValidateCode(secret, code string) bool {
 func (s *TOTPService) GenerateRecoveryCodes(count int) ([]string, []string, error) {
 	plain := make([]string, count)
 	hashed := make([]string, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		b := make([]byte, 16)
 		if _, err := rand.Read(b); err != nil {
 			return nil, nil, fmt.Errorf("failed to generate recovery code: %w", err)
@@ -133,8 +133,8 @@ func (s *TOTPService) ValidateRecoveryCode(code string, hashedCodes []string) (i
 func (s *TOTPService) ValidateCodeWithWindow(secret, code string) bool {
 	valid, _ := totp.ValidateCustom(code, secret, time.Now(), totp.ValidateOpts{
 		Period:    30,
-		Skew:     1,
-		Digits:   otp.DigitsSix,
+		Skew:      1,
+		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
 	})
 	return valid

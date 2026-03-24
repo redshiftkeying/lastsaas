@@ -338,7 +338,7 @@ func (s *Service) collectMongoMetrics(ctx context.Context) models.MongoMetrics {
 	return result
 }
 
-func toInt64(v interface{}) int64 {
+func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int32:
 		return int64(n)
@@ -351,7 +351,7 @@ func toInt64(v interface{}) int64 {
 	}
 }
 
-func toInt32(v interface{}) int32 {
+func toInt32(v any) int32 {
 	switch n := v.(type) {
 	case int32:
 		return n

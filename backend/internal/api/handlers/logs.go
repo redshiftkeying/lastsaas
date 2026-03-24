@@ -180,7 +180,7 @@ func (h *LogHandler) SeverityCounts(w http.ResponseWriter, r *http.Request) {
 		counts[r.Severity] = r.Count
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"counts": counts})
+	respondWithJSON(w, http.StatusOK, map[string]any{"counts": counts})
 }
 
 // ExportCSV streams all logs matching filters as a CSV download.
@@ -237,4 +237,3 @@ func getFirst(q map[string][]string, key string) string {
 	}
 	return ""
 }
-

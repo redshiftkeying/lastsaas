@@ -72,7 +72,7 @@ func (h *PlansHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
 		for aggCursor.Next(ctx) {
 			var row struct {
 				ID    primitive.ObjectID `bson:"_id"`
-				Count int               `bson:"count"`
+				Count int                `bson:"count"`
 			}
 			if aggCursor.Decode(&row) == nil {
 				subCounts[row.ID] = row.Count
@@ -91,7 +91,7 @@ func (h *PlansHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, _ := h.db.Plans().CountDocuments(ctx, bson.M{})
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"plans": result, "total": total})
+	respondWithJSON(w, http.StatusOK, map[string]any{"plans": result, "total": total})
 }
 
 // GetPlan returns a single plan by ID.
@@ -154,7 +154,7 @@ func (h *PlansHandler) ListEntitlementKeys(w http.ResponseWriter, r *http.Reques
 	for k, d := range keyMap {
 		keys = append(keys, KeyInfo{Key: k, Type: d.typ, Description: d.description})
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"keys": keys})
+	respondWithJSON(w, http.StatusOK, map[string]any{"keys": keys})
 }
 
 type planRequest struct {
@@ -390,7 +390,7 @@ func (h *PlansHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	var updated models.Plan
 	h.db.Plans().FindOne(r.Context(), bson.M{"_id": planID}).Decode(&updated)
 	subCount, _ := h.db.Tenants().CountDocuments(r.Context(), bson.M{"planId": planID})
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"id":                   updated.ID,
 		"name":                 updated.Name,
 		"description":          updated.Description,
@@ -755,20 +755,20 @@ func (h *PlansHandler) ListPlansPublic(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
-		"plans":                      plans,
-		"currentPlanId":              currentPlanID,
-		"billingWaived":              tenant.BillingWaived,
-		"tenantSubscriptionCredits":  tenant.SubscriptionCredits,
-		"tenantPurchasedCredits":     tenant.PurchasedCredits,
-		"billingStatus":              tenant.BillingStatus,
-		"billingInterval":            tenant.BillingInterval,
-		"currentPeriodEnd":           tenant.CurrentPeriodEnd,
-		"canceledAt":                 tenant.CanceledAt,
-		"currentPlanUserLimit":       currentPlanUserLimit,
-		"maxPlanUserLimit":           maxPlanUserLimit,
-		"upgradePromptTitle":                h.configStore.Get("team.upgrade_prompt.title"),
-		"upgradePromptBody":                 h.configStore.Get("team.upgrade_prompt.body"),
+	respondWithJSON(w, http.StatusOK, map[string]any{
+		"plans":                               plans,
+		"currentPlanId":                       currentPlanID,
+		"billingWaived":                       tenant.BillingWaived,
+		"tenantSubscriptionCredits":           tenant.SubscriptionCredits,
+		"tenantPurchasedCredits":              tenant.PurchasedCredits,
+		"billingStatus":                       tenant.BillingStatus,
+		"billingInterval":                     tenant.BillingInterval,
+		"currentPeriodEnd":                    tenant.CurrentPeriodEnd,
+		"canceledAt":                          tenant.CanceledAt,
+		"currentPlanUserLimit":                currentPlanUserLimit,
+		"maxPlanUserLimit":                    maxPlanUserLimit,
+		"upgradePromptTitle":                  h.configStore.Get("team.upgrade_prompt.title"),
+		"upgradePromptBody":                   h.configStore.Get("team.upgrade_prompt.body"),
 		"entitlementUpgradePromptTitle":       h.configStore.Get("entitlement.upgrade_prompt.title"),
 		"entitlementUpgradePromptBody":        h.configStore.Get("entitlement.upgrade_prompt.body"),
 		"entitlementUpgradePromptNumericBody": h.configStore.Get("entitlement.upgrade_prompt.numeric_body"),

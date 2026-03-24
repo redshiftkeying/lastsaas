@@ -126,7 +126,7 @@ func (s *Service) GetOrCreatePrice(ctx context.Context, entityType string, entit
 	priceParams := &stripe.PriceParams{
 		Product:    stripe.String(prod.ID),
 		Currency:   stripe.String(currency),
-		UnitAmount: stripe.Int64(amountCents),
+		UnitAmount: new(amountCents),
 	}
 	if interval != "" {
 		priceParams.Recurring = &stripe.PriceRecurringParams{
@@ -168,15 +168,15 @@ type CheckoutRequest struct {
 	BundleID        *primitive.ObjectID
 	BundleName      string
 	AmountCents     int64
-	BillingInterval string              // "month" or "year"
+	BillingInterval string // "month" or "year"
 	TenantID        string
 	UserID          string
-	Quantity        int64               // For per-seat plans; defaults to 1
-	SeatQuantity    int64               // Stored in metadata for seat tracking
-	CustomLineItems []CheckoutLineItem  // Override default single line item
-	TrialDays       int                 // Free trial period in days (0 = no trial)
-	Currency        string              // Currency code (e.g. "usd", "eur"); defaults to "usd"
-	AutomaticTax    bool                // Enable Stripe Tax for automatic tax calculation
+	Quantity        int64              // For per-seat plans; defaults to 1
+	SeatQuantity    int64              // Stored in metadata for seat tracking
+	CustomLineItems []CheckoutLineItem // Override default single line item
+	TrialDays       int                // Free trial period in days (0 = no trial)
+	Currency        string             // Currency code (e.g. "usd", "eur"); defaults to "usd"
+	AutomaticTax    bool               // Enable Stripe Tax for automatic tax calculation
 }
 
 // CreateCheckoutSession creates a Stripe Checkout Session for a subscription or one-time payment.
@@ -212,7 +212,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 			if item.Quantity > 0 {
 				lineItems = append(lineItems, &stripe.CheckoutSessionLineItemParams{
 					Price:    stripe.String(item.PriceID),
-					Quantity: stripe.Int64(item.Quantity),
+					Quantity: new(item.Quantity),
 				})
 			}
 		}
@@ -235,7 +235,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 		lineItems = []*stripe.CheckoutSessionLineItemParams{
 			{
 				Price:    stripe.String(priceID),
-				Quantity: stripe.Int64(qty),
+				Quantity: new(qty),
 			},
 		}
 	}
@@ -245,7 +245,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 		Mode:                stripe.String(mode),
 		SuccessURL:          stripe.String(s.frontendURL + "/billing/success?session_id={CHECKOUT_SESSION_ID}"),
 		CancelURL:           stripe.String(s.frontendURL + "/billing/cancel"),
-		AllowPromotionCodes: stripe.Bool(true),
+		AllowPromotionCodes: new(true),
 		Metadata:            metadata,
 		LineItems:           lineItems,
 	}
@@ -253,10 +253,10 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 	// Stripe Tax: automatic tax calculation + tax ID collection
 	if req.AutomaticTax {
 		params.AutomaticTax = &stripe.CheckoutSessionAutomaticTaxParams{
-			Enabled: stripe.Bool(true),
+			Enabled: new(true),
 		}
 		params.TaxIDCollection = &stripe.CheckoutSessionTaxIDCollectionParams{
-			Enabled: stripe.Bool(true),
+			Enabled: new(true),
 		}
 		params.CustomerUpdate = &stripe.CheckoutSessionCustomerUpdateParams{
 			Address: stripe.String("auto"),
@@ -272,7 +272,7 @@ func (s *Service) CreateCheckoutSession(ctx context.Context, req CheckoutRequest
 			}
 		}
 		if req.TrialDays > 0 {
-			subData.TrialPeriodDays = stripe.Int64(int64(req.TrialDays))
+			subData.TrialPeriodDays = new(int64(req.TrialDays))
 		}
 		if subData.Metadata != nil || req.TrialDays > 0 {
 			params.SubscriptionData = subData
@@ -305,7 +305,7 @@ func (s *Service) CreateBillingPortalSession(ctx context.Context, customerID str
 // CancelSubscriptionAtPeriodEnd marks a subscription to cancel at the end of the current period.
 func (s *Service) CancelSubscriptionAtPeriodEnd(ctx context.Context, subscriptionID string) (*time.Time, error) {
 	params := &stripe.SubscriptionParams{
-		CancelAtPeriodEnd: stripe.Bool(true),
+		CancelAtPeriodEnd: new(true),
 	}
 	params.AddExpand("items")
 	sub, err := subscription.Update(subscriptionID, params)
@@ -389,7 +389,7 @@ func (s *Service) UpdateSubscriptionQuantity(ctx context.Context, subscriptionID
 		Items: []*stripe.SubscriptionItemsParams{
 			{
 				ID:       stripe.String(itemID),
-				Quantity: stripe.Int64(quantity),
+				Quantity: new(quantity),
 			},
 		},
 		ProrationBehavior: stripe.String("create_prorations"),

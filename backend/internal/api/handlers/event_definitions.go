@@ -105,7 +105,7 @@ func (h *EventDefinitionsHandler) ListEventDefinitions(w http.ResponseWriter, r 
 		resp[i] = defResponse{EventDefinition: d, Count: counts[d.Name]}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"definitions": resp})
+	respondWithJSON(w, http.StatusOK, map[string]any{"definitions": resp})
 }
 
 // CreateEventDefinition creates a new event definition.
@@ -324,9 +324,9 @@ func (h *EventDefinitionsHandler) GetSankeyData(w http.ResponseWriter, r *http.R
 	}
 
 	if !hasDeps {
-		respondWithJSON(w, http.StatusOK, map[string]interface{}{
-			"nodes":           []interface{}{},
-			"links":           []interface{}{},
+		respondWithJSON(w, http.StatusOK, map[string]any{
+			"nodes":           []any{},
+			"links":           []any{},
 			"hasDependencies": false,
 		})
 		return
@@ -423,7 +423,7 @@ func (h *EventDefinitionsHandler) GetSankeyData(w http.ResponseWriter, r *http.R
 		links = []sankeyLink{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"nodes":           nodes,
 		"links":           links,
 		"hasDependencies": true,

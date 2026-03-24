@@ -11,18 +11,18 @@ import (
 )
 
 type Config struct {
-	Environment string           `yaml:"-"`
-	Server      ServerConfig     `yaml:"server"`
-	Database    DatabaseConfig   `yaml:"database"`
-	Frontend    FrontendConfig   `yaml:"frontend"`
-	JWT         JWTConfig        `yaml:"jwt"`
-	OAuth       OAuthConfig      `yaml:"oauth"`
-	Email       EmailConfig      `yaml:"email"`
-	App         AppConfig        `yaml:"app"`
-	Stripe      StripeConfig     `yaml:"stripe"`
-	WebAuthn    WebAuthnConfig   `yaml:"webauthn"`
-	Webhooks    WebhooksConfig   `yaml:"webhooks"`
-	DataDog     DataDogConfig    `yaml:"datadog"`
+	Environment string         `yaml:"-"`
+	Server      ServerConfig   `yaml:"server"`
+	Database    DatabaseConfig `yaml:"database"`
+	Frontend    FrontendConfig `yaml:"frontend"`
+	JWT         JWTConfig      `yaml:"jwt"`
+	OAuth       OAuthConfig    `yaml:"oauth"`
+	Email       EmailConfig    `yaml:"email"`
+	App         AppConfig      `yaml:"app"`
+	Stripe      StripeConfig   `yaml:"stripe"`
+	WebAuthn    WebAuthnConfig `yaml:"webauthn"`
+	Webhooks    WebhooksConfig `yaml:"webhooks"`
+	DataDog     DataDogConfig  `yaml:"datadog"`
 }
 
 type WebhooksConfig struct {
@@ -95,11 +95,11 @@ type DataDogConfig struct {
 // It searches the current directory and up to 3 parent directories.
 func LoadEnvFile() {
 	dir, _ := os.Getwd()
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		envPath := filepath.Join(dir, ".env")
 		data, err := os.ReadFile(envPath)
 		if err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
+			for line := range strings.SplitSeq(string(data), "\n") {
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
 					continue
@@ -196,9 +196,9 @@ func (c *Config) validate() error {
 func expandEnvVars(s string) string {
 	return os.Expand(s, func(key string) string {
 		// Support ${VAR:default} syntax
-		if idx := strings.Index(key, ":"); idx >= 0 {
-			envKey := key[:idx]
-			defaultVal := key[idx+1:]
+		if before, after, ok := strings.Cut(key, ":"); ok {
+			envKey := before
+			defaultVal := after
 			if val := os.Getenv(envKey); val != "" {
 				return val
 			}

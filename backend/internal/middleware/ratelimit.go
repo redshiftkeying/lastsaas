@@ -47,21 +47,21 @@ type RateLimitConfig struct {
 }
 
 var (
-	AccountCreationLimit    = RateLimitConfig{MaxRequests: 5, Window: time.Hour}
-	LoginAttemptLimit       = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
-	PasswordResetLimit      = RateLimitConfig{MaxRequests: 5, Window: time.Hour}
-	ResendVerificationLimit = RateLimitConfig{MaxRequests: 3, Window: 60 * time.Second}
-	OAuthInitLimit          = RateLimitConfig{MaxRequests: 10, Window: time.Minute}
-	EmailVerificationLimit  = RateLimitConfig{MaxRequests: 10, Window: time.Hour}
-	TokenRefreshLimit       = RateLimitConfig{MaxRequests: 30, Window: time.Minute}
-	InvitationLimit         = RateLimitConfig{MaxRequests: 20, Window: time.Hour}
-	MFAChallengeLimit       = RateLimitConfig{MaxRequests: 3, Window: 5 * time.Minute}
-	MagicLinkLimit          = RateLimitConfig{MaxRequests: 5, Window: 15 * time.Minute}
-	EmailPasswordResetLimit = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
-	EmailMagicLinkLimit     = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
-	UsageRecordLimit        = RateLimitConfig{MaxRequests: 120, Window: time.Minute}
-	ResetTokenVerifyLimit   = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
-	MagicLinkVerifyLimit    = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
+	AccountCreationLimit        = RateLimitConfig{MaxRequests: 5, Window: time.Hour}
+	LoginAttemptLimit           = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
+	PasswordResetLimit          = RateLimitConfig{MaxRequests: 5, Window: time.Hour}
+	ResendVerificationLimit     = RateLimitConfig{MaxRequests: 3, Window: 60 * time.Second}
+	OAuthInitLimit              = RateLimitConfig{MaxRequests: 10, Window: time.Minute}
+	EmailVerificationLimit      = RateLimitConfig{MaxRequests: 10, Window: time.Hour}
+	TokenRefreshLimit           = RateLimitConfig{MaxRequests: 30, Window: time.Minute}
+	InvitationLimit             = RateLimitConfig{MaxRequests: 20, Window: time.Hour}
+	MFAChallengeLimit           = RateLimitConfig{MaxRequests: 3, Window: 5 * time.Minute}
+	MagicLinkLimit              = RateLimitConfig{MaxRequests: 5, Window: 15 * time.Minute}
+	EmailPasswordResetLimit     = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
+	EmailMagicLinkLimit         = RateLimitConfig{MaxRequests: 3, Window: time.Hour}
+	UsageRecordLimit            = RateLimitConfig{MaxRequests: 120, Window: time.Minute}
+	ResetTokenVerifyLimit       = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
+	MagicLinkVerifyLimit        = RateLimitConfig{MaxRequests: 10, Window: 15 * time.Minute}
 	CSVExportLimit              = RateLimitConfig{MaxRequests: 5, Window: time.Hour}
 	TelemetryAnonymousLimit     = RateLimitConfig{MaxRequests: 60, Window: time.Minute}
 	TelemetryAuthenticatedLimit = RateLimitConfig{MaxRequests: 120, Window: time.Minute}
@@ -249,14 +249,11 @@ func (rl *RateLimiter) RateLimitHandler(config RateLimitConfig, keyFunc func(*ht
 		w.Header().Set("X-RateLimit-Reset", resetTime.Format(time.RFC3339))
 
 		if !allowed {
-			retryAfter := int(time.Until(resetTime).Seconds())
-			if retryAfter < 1 {
-				retryAfter = 1
-			}
+			retryAfter := max(int(time.Until(resetTime).Seconds()), 1)
 			w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			json.NewEncoder(w).Encode(map[string]any{
 				"error":      "Rate limit exceeded",
 				"retryAfter": retryAfter,
 			})

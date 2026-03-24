@@ -86,7 +86,7 @@ func (h *BootstrapHandler) BootstrapGuard(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"error":    "System not initialized",
 			"redirect": "/setup",
 		})

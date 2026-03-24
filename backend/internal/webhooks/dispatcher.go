@@ -223,7 +223,7 @@ func (d *Dispatcher) deliver(ctx context.Context, hook models.Webhook, eventType
 }
 
 func (d *Dispatcher) deliverWithRetry(ctx context.Context, hook models.Webhook, eventType models.WebhookEventType, event events.Event, retryCount int) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"event":     string(eventType),
 		"timestamp": event.Timestamp.UTC().Format(time.RFC3339),
 		"data":      event.Data,
@@ -337,7 +337,7 @@ func (d *Dispatcher) DeliverTest(ctx context.Context, hook models.Webhook) model
 	testEvent := events.Event{
 		Type:      events.EventTenantCreated,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":   "test_" + primitive.NewObjectID().Hex()[:8],
 			"tenantName": "Test Tenant",
 			"userId":     "test_" + primitive.NewObjectID().Hex()[:8],
@@ -345,7 +345,7 @@ func (d *Dispatcher) DeliverTest(ctx context.Context, hook models.Webhook) model
 		},
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"event":     string(models.WebhookEventTenantCreated),
 		"timestamp": testEvent.Timestamp.UTC().Format(time.RFC3339),
 		"data":      testEvent.Data,

@@ -27,11 +27,11 @@ var validEventName = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 var validSessionID = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // sanitizeProperties caps the number of top-level keys and truncates long string values.
-func sanitizeProperties(props map[string]interface{}) map[string]interface{} {
+func sanitizeProperties(props map[string]any) map[string]any {
 	if props == nil {
 		return nil
 	}
-	out := make(map[string]interface{}, len(props))
+	out := make(map[string]any, len(props))
 	count := 0
 	for k, v := range props {
 		if count >= maxPropertiesCount {
@@ -61,9 +61,9 @@ func NewTelemetryHandler(telemetrySvc *telemetry.Service) *TelemetryHandler {
 // Rate-limited by IP, no authentication required.
 func (h *TelemetryHandler) TrackAnonymous(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SessionID  string                 `json:"sessionId"`
-		Event      string                 `json:"event"`
-		Properties map[string]interface{} `json:"properties"`
+		SessionID  string         `json:"sessionId"`
+		Event      string         `json:"event"`
+		Properties map[string]any `json:"properties"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
@@ -113,8 +113,8 @@ func (h *TelemetryHandler) TrackAuthenticated(w http.ResponseWriter, r *http.Req
 	tenant, _ := middleware.GetTenantFromContext(r.Context())
 
 	var req struct {
-		Event      string                 `json:"event"`
-		Properties map[string]interface{} `json:"properties"`
+		Event      string         `json:"event"`
+		Properties map[string]any `json:"properties"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
@@ -168,8 +168,8 @@ func (h *TelemetryHandler) TrackBatch(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Events []struct {
-			Event      string                 `json:"event"`
-			Properties map[string]interface{} `json:"properties"`
+			Event      string         `json:"event"`
+			Properties map[string]any `json:"properties"`
 		} `json:"events"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -222,7 +222,7 @@ func (h *TelemetryHandler) TrackBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"tracked": len(events),
 	})

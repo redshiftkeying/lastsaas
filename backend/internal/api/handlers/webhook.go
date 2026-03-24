@@ -264,7 +264,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 		h.events.Emit(events.Event{
 			Type:      events.EventSubscriptionActivated,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"tenantId":        tenantID.Hex(),
 				"planId":          planID.Hex(),
 				"planName":        plan.Name,
@@ -275,7 +275,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 		h.events.Emit(events.Event{
 			Type:      events.EventPlanChanged,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"tenantId": tenantID.Hex(),
 				"planId":   planID.Hex(),
 				"planName": plan.Name,
@@ -288,14 +288,14 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 				Category:   models.TelemetryCategoryFunnel,
 				UserID:     &userID,
 				TenantID:   &tenantID,
-				Properties: map[string]interface{}{"planName": plan.Name, "billingInterval": billingInterval},
+				Properties: map[string]any{"planName": plan.Name, "billingInterval": billingInterval},
 			})
 			h.telemetrySvc.Track(ctx, models.TelemetryEvent{
 				EventName:  models.TelemetryPlanChanged,
 				Category:   models.TelemetryCategoryFunnel,
 				UserID:     &userID,
 				TenantID:   &tenantID,
-				Properties: map[string]interface{}{"planName": plan.Name},
+				Properties: map[string]any{"planName": plan.Name},
 			})
 		}
 
@@ -335,7 +335,7 @@ func (h *WebhookHandler) handleCheckoutCompleted(ctx context.Context, event stri
 		h.events.Emit(events.Event{
 			Type:      events.EventCreditsPurchased,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"tenantId":    tenantID.Hex(),
 				"bundleId":    bundleID.Hex(),
 				"bundleName":  bundle.Name,
@@ -437,7 +437,7 @@ func (h *WebhookHandler) handleInvoicePaid(ctx context.Context, event stripe.Eve
 	h.events.Emit(events.Event{
 		Type:      events.EventPaymentReceived,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":    tenant.ID.Hex(),
 			"amountCents": amountCents,
 			"currency":    "usd",
@@ -512,7 +512,7 @@ func (h *WebhookHandler) handleInvoicePaymentFailed(ctx context.Context, event s
 	h.events.Emit(events.Event{
 		Type:      events.EventPaymentFailed,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":   tenant.ID.Hex(),
 			"tenantName": tenant.Name,
 		},
@@ -549,7 +549,7 @@ func (h *WebhookHandler) handleSubscriptionUpdated(ctx context.Context, event st
 		h.events.Emit(events.Event{
 			Type:      events.EventSubscriptionCanceled,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"tenantId":   tenant.ID.Hex(),
 				"tenantName": tenant.Name,
 				"reason":     "cancel_at_period_end",
@@ -623,7 +623,7 @@ func (h *WebhookHandler) handleSubscriptionDeleted(ctx context.Context, event st
 	h.events.Emit(events.Event{
 		Type:      events.EventSubscriptionCanceled,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":   tenant.ID.Hex(),
 			"tenantName": tenant.Name,
 			"reason":     "subscription_ended",
@@ -632,7 +632,7 @@ func (h *WebhookHandler) handleSubscriptionDeleted(ctx context.Context, event st
 	h.events.Emit(events.Event{
 		Type:      events.EventPlanChanged,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": tenant.ID.Hex(),
 			"planName": "Free",
 		},
@@ -676,7 +676,7 @@ func (h *WebhookHandler) handleChargeRefunded(ctx context.Context, event stripe.
 	h.events.Emit(events.Event{
 		Type:      "billing.refund_received",
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":    tenant.ID.Hex(),
 			"tenantName":  tenant.Name,
 			"amountCents": refundedAmount,
@@ -721,7 +721,7 @@ func (h *WebhookHandler) handleDisputeCreated(ctx context.Context, event stripe.
 	h.events.Emit(events.Event{
 		Type:      "billing.dispute_created",
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":    tenant.ID.Hex(),
 			"tenantName":  tenant.Name,
 			"amountCents": dispute.Amount,
@@ -769,7 +769,7 @@ func (h *WebhookHandler) handleDisputeClosed(ctx context.Context, event stripe.E
 	h.events.Emit(events.Event{
 		Type:      "billing.dispute_closed",
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId":   tenant.ID.Hex(),
 			"tenantName": tenant.Name,
 			"status":     string(dispute.Status),
@@ -864,4 +864,3 @@ func extractInstanceFromEvent(event stripe.Event) (string, bool) {
 	}
 	return "", false
 }
-

@@ -78,7 +78,7 @@ func statusClr(ok bool) string {
 
 func warnClr(text string) string { return clr(cYellow, text) }
 
-func printJSON(v interface{}) {
+func printJSON(v any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	enc.Encode(v)

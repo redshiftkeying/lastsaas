@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -80,7 +81,6 @@ func (h *AdminHandler) SetEmailService(svc *email.ResendService) {
 	h.emailService = svc
 }
 
-
 type TenantListItem struct {
 	ID                  string    `json:"id"`
 	Name                string    `json:"name"`
@@ -97,13 +97,13 @@ type TenantListItem struct {
 }
 
 type UserListItem struct {
-	ID            string    `json:"id"`
-	Email         string    `json:"email"`
-	DisplayName   string    `json:"displayName"`
-	EmailVerified bool      `json:"emailVerified"`
-	IsActive      bool      `json:"isActive"`
-	TenantCount   int       `json:"tenantCount"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            string     `json:"id"`
+	Email         string     `json:"email"`
+	DisplayName   string     `json:"displayName"`
+	EmailVerified bool       `json:"emailVerified"`
+	IsActive      bool       `json:"isActive"`
+	TenantCount   int        `json:"tenantCount"`
+	CreatedAt     time.Time  `json:"createdAt"`
 	LastLoginAt   *time.Time `json:"lastLoginAt,omitempty"`
 }
 
@@ -209,7 +209,7 @@ func (h *AdminHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 			defer aggCursor.Close(ctx)
 			var results []struct {
 				ID    primitive.ObjectID `bson:"_id"`
-				Count int               `bson:"count"`
+				Count int                `bson:"count"`
 			}
 			aggCursor.All(ctx, &results)
 			for _, r := range results {
@@ -260,7 +260,7 @@ func (h *AdminHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"tenants": items,
 		"total":   total,
 		"page":    page,
@@ -329,7 +329,7 @@ func (h *AdminHandler) ExportTenantsCSV(w http.ResponseWriter, r *http.Request) 
 			defer aggCursor.Close(ctx)
 			var results []struct {
 				ID    primitive.ObjectID `bson:"_id"`
-				Count int               `bson:"count"`
+				Count int                `bson:"count"`
 			}
 			aggCursor.All(ctx, &results)
 			for _, r := range results {
@@ -446,7 +446,7 @@ func (h *AdminHandler) GetTenant(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"tenant":  tenant,
 		"members": members,
 	})
@@ -489,7 +489,7 @@ func (h *AdminHandler) UpdateTenantStatus(w http.ResponseWriter, r *http.Request
 		h.events.Emit(events.Event{
 			Type:      events.EventTenantDeactivated,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"tenantId":   tenantID.Hex(),
 				"tenantName": tenant.Name,
 			},
@@ -599,7 +599,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			defer aggCursor.Close(ctx)
 			var results []struct {
 				ID    primitive.ObjectID `bson:"_id"`
-				Count int               `bson:"count"`
+				Count int                `bson:"count"`
 			}
 			aggCursor.All(ctx, &results)
 			for _, r := range results {
@@ -622,7 +622,7 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"users": items,
 		"total": total,
 		"page":  page,
@@ -685,7 +685,7 @@ func (h *AdminHandler) ExportUsersCSV(w http.ResponseWriter, r *http.Request) {
 			defer aggCursor.Close(ctx)
 			var results []struct {
 				ID    primitive.ObjectID `bson:"_id"`
-				Count int               `bson:"count"`
+				Count int                `bson:"count"`
 			}
 			aggCursor.All(ctx, &results)
 			for _, r := range results {
@@ -762,7 +762,7 @@ func (h *AdminHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) 
 		h.events.Emit(events.Event{
 			Type:      events.EventUserDeactivated,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"userId": userID.Hex(),
 			},
 		})
@@ -772,7 +772,7 @@ func (h *AdminHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AdminHandler) GetAbout(w http.ResponseWriter, r *http.Request) {
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"version":   version.Current,
 		"copyright": "\u00a92026 Metavert LLC, licensed under the MIT License",
 	})
@@ -831,17 +831,17 @@ func (h *AdminHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"users":   userCount,
 		"tenants": tenantCount,
-		"health": map[string]interface{}{
+		"health": map[string]any{
 			"healthy": healthy,
 			"issues":  issues,
 		},
 	})
 }
 
-func decodeJSON(r *http.Request, v interface{}) error {
+func decodeJSON(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
@@ -978,7 +978,7 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		LastLoginAt:   user.LastLoginAt,
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"user":        detail,
 		"memberships": memberDetails,
 	})
@@ -1142,7 +1142,7 @@ func (h *AdminHandler) PreflightDeleteUser(w http.ResponseWriter, r *http.Reques
 	actingUser, _ := middleware.GetUserFromContext(ctx)
 
 	if actingUser.ID == userID {
-		respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		respondWithJSON(w, http.StatusOK, map[string]any{
 			"canDelete": false,
 			"reason":    "Cannot delete your own account",
 		})
@@ -1237,7 +1237,7 @@ func (h *AdminHandler) PreflightDeleteUser(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"canDelete":  true,
 		"ownerships": ownershipInfo,
 	})
@@ -1334,13 +1334,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// No other members — confirm tenant deletion
-			confirmed := false
-			for _, tid := range req.ConfirmTenantDeletions {
-				if tid == m.TenantID.Hex() {
-					confirmed = true
-					break
-				}
-			}
+			confirmed := slices.Contains(req.ConfirmTenantDeletions, m.TenantID.Hex())
 			if !confirmed {
 				respondWithError(w, http.StatusBadRequest, fmt.Sprintf("User is the sole member of tenant '%s'. Confirm tenant deletion.", tenant.Name))
 				return
@@ -1354,7 +1348,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 			h.events.Emit(events.Event{
 				Type:      events.EventTenantDeleted,
 				Timestamp: time.Now(),
-				Data: map[string]interface{}{
+				Data: map[string]any{
 					"tenantId":   m.TenantID.Hex(),
 					"tenantName": tenant.Name,
 					"reason":     "owner_deleted",
@@ -1376,7 +1370,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventUserDeleted,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"userId": userID.Hex(),
 			"email":  user.Email,
 		},
@@ -1560,7 +1554,7 @@ func (h *AdminHandler) ImpersonateUser(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"accessToken": accessToken,
 		"user":        targetUser,
 		"memberships": membershipInfos,
@@ -1653,7 +1647,7 @@ func (h *AdminHandler) ListRootMembers(w http.ResponseWriter, r *http.Request) {
 		invitations = []models.Invitation{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"members":     members,
 		"invitations": invitations,
 	})
@@ -1764,7 +1758,7 @@ func (h *AdminHandler) InviteRootMember(w http.ResponseWriter, r *http.Request) 
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberInvited,
 		Timestamp: now,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": rootTenant.ID.Hex(),
 			"email":    req.Email,
 			"role":     string(req.Role),
@@ -1774,7 +1768,7 @@ func (h *AdminHandler) InviteRootMember(w http.ResponseWriter, r *http.Request) 
 	h.syslog.LogTenantActivity(ctx, models.LogHigh,
 		fmt.Sprintf("Root member invited: %s as %s", req.Email, req.Role),
 		user.ID, rootTenant.ID, "admin.root_member_invited",
-		map[string]interface{}{"email": req.Email, "role": string(req.Role)})
+		map[string]any{"email": req.Email, "role": string(req.Role)})
 
 	respondWithJSON(w, http.StatusCreated, map[string]string{"message": "Invitation sent"})
 }
@@ -1832,12 +1826,12 @@ func (h *AdminHandler) RemoveRootMember(w http.ResponseWriter, r *http.Request) 
 	h.syslog.LogTenantActivity(ctx, models.LogHigh,
 		fmt.Sprintf("Root member removed: user %s", targetUserID.Hex()),
 		currentMembership.UserID, rootTenant.ID, "admin.root_member_removed",
-		map[string]interface{}{"targetUserId": targetUserID.Hex()})
+		map[string]any{"targetUserId": targetUserID.Hex()})
 
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberRemoved,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": rootTenant.ID.Hex(),
 			"userId":   targetUserID.Hex(),
 		},
@@ -1904,7 +1898,7 @@ func (h *AdminHandler) ChangeRootMemberRole(w http.ResponseWriter, r *http.Reque
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberRoleChanged,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": rootTenant.ID.Hex(),
 			"userId":   targetUserID.Hex(),
 			"newRole":  string(req.Role),
@@ -1914,7 +1908,7 @@ func (h *AdminHandler) ChangeRootMemberRole(w http.ResponseWriter, r *http.Reque
 	h.syslog.LogTenantActivity(ctx, models.LogHigh,
 		fmt.Sprintf("Root member role changed: user %s to %s", targetUserID.Hex(), req.Role),
 		currentMembership.UserID, rootTenant.ID, "admin.root_member_role_changed",
-		map[string]interface{}{"targetUserId": targetUserID.Hex(), "newRole": string(req.Role)})
+		map[string]any{"targetUserId": targetUserID.Hex(), "newRole": string(req.Role)})
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Role updated"})
 }
@@ -1948,7 +1942,7 @@ func (h *AdminHandler) CancelRootInvitation(w http.ResponseWriter, r *http.Reque
 		h.syslog.LogTenantActivity(ctx, models.LogMedium,
 			fmt.Sprintf("Root member invitation canceled: %s", invID.Hex()),
 			user.ID, rootTenant.ID, "admin.root_invitation_canceled",
-			map[string]interface{}{"invitationId": invID.Hex()})
+			map[string]any{"invitationId": invID.Hex()})
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Invitation canceled"})

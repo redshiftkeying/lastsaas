@@ -101,7 +101,7 @@ func (s *Service) runIntegrationChecks() {
 	count := len(s.integrations)
 	s.intMu.RUnlock()
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		s.intMu.RLock()
 		entry := s.integrations[i]
 		s.intMu.RUnlock()
@@ -262,7 +262,9 @@ func NewSAMLChecker() IntegrationChecker {
 }
 
 // NewDataDogChecker returns a checker that validates the DataDog API key.
-func NewDataDogChecker(validator interface{ Validate(ctx context.Context) error }) IntegrationChecker {
+func NewDataDogChecker(validator interface {
+	Validate(ctx context.Context) error
+}) IntegrationChecker {
 	return func(ctx context.Context) error {
 		return validator.Validate(ctx)
 	}

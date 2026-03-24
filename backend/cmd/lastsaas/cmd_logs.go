@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -178,9 +179,7 @@ func logsFollow(ctx context.Context, database *db.MongoDB, filter bson.M, initia
 		time.Sleep(2 * time.Second)
 
 		followFilter := bson.M{}
-		for k, v := range filter {
-			followFilter[k] = v
-		}
+		maps.Copy(followFilter, filter)
 		followFilter["createdAt"] = bson.M{"$gt": lastTime}
 
 		opts := options.Find().

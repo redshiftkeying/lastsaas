@@ -28,7 +28,7 @@ func Load() string {
 	}
 
 	dir, _ := os.Getwd()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		data, err := os.ReadFile(filepath.Join(dir, "VERSION"))
 		if err == nil {
 			Current = strings.TrimSpace(string(data))

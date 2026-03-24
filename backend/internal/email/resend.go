@@ -66,7 +66,7 @@ func (s *ResendService) SendEmail(to, subject, html string) error {
 	}
 
 	const maxRetries = 3
-	for attempt := 0; attempt < maxRetries; attempt++ {
+	for attempt := range maxRetries {
 		if attempt > 0 {
 			backoff := time.Duration(math.Pow(2, float64(attempt))) * 500 * time.Millisecond
 			time.Sleep(backoff)

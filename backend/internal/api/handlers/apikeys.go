@@ -58,7 +58,7 @@ func (h *APIKeysHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		keys = []models.APIKey{}
 	}
 	total, _ := h.db.APIKeys().CountDocuments(r.Context(), bson.M{"isActive": true})
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"apiKeys": keys, "total": total})
+	respondWithJSON(w, http.StatusOK, map[string]any{"apiKeys": keys, "total": total})
 }
 
 // CreateAPIKey handles POST /api/admin/api-keys
@@ -106,13 +106,13 @@ func (h *APIKeysHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	apiKey := models.APIKey{
-		Name:      req.Name,
-		KeyHash:   keyHash,
+		Name:       req.Name,
+		KeyHash:    keyHash,
 		KeyPreview: keyPreview,
-		Authority: authority,
-		CreatedBy: user.ID,
-		CreatedAt: now,
-		IsActive:  true,
+		Authority:  authority,
+		CreatedBy:  user.ID,
+		CreatedAt:  now,
+		IsActive:   true,
 	}
 
 	if err := validation.Validate(&apiKey); err != nil {
@@ -137,7 +137,7 @@ func (h *APIKeysHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventAPIKeyCreated,
 		Timestamp: now,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"keyId":     apiKey.ID.Hex(),
 			"name":      req.Name,
 			"authority": req.Authority,
@@ -145,7 +145,7 @@ func (h *APIKeysHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
-	respondWithJSON(w, http.StatusCreated, map[string]interface{}{
+	respondWithJSON(w, http.StatusCreated, map[string]any{
 		"apiKey": apiKey,
 		"rawKey": rawKey,
 	})
@@ -173,7 +173,7 @@ func (h *APIKeysHandler) DeleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		h.events.Emit(events.Event{
 			Type:      events.EventAPIKeyRevoked,
 			Timestamp: time.Now(),
-			Data: map[string]interface{}{
+			Data: map[string]any{
 				"keyId":     keyID.Hex(),
 				"revokedBy": user.ID.Hex(),
 			},

@@ -45,7 +45,7 @@ func (h *AnnouncementsHandler) ListPublic(w http.ResponseWriter, r *http.Request
 	if announcements == nil {
 		announcements = []models.Announcement{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"announcements": announcements})
+	respondWithJSON(w, http.StatusOK, map[string]any{"announcements": announcements})
 }
 
 // ListAll returns all announcements (admin only).
@@ -66,7 +66,7 @@ func (h *AnnouncementsHandler) ListAll(w http.ResponseWriter, r *http.Request) {
 	if announcements == nil {
 		announcements = []models.Announcement{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"announcements": announcements})
+	respondWithJSON(w, http.StatusOK, map[string]any{"announcements": announcements})
 }
 
 // Create creates a new announcement.

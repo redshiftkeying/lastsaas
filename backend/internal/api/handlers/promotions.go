@@ -47,18 +47,18 @@ func (h *PromotionsHandler) ListPromotions(w http.ResponseWriter, r *http.Reques
 	apicounter.StripeAPICalls.Add(1)
 
 	type promoResponse struct {
-		ID              string   `json:"id"`
-		Code            string   `json:"code"`
-		Active          bool     `json:"active"`
-		CouponID        string   `json:"couponId"`
-		CouponName      string   `json:"couponName"`
-		PercentOff      float64  `json:"percentOff"`
-		AmountOff       int64    `json:"amountOff"`
-		Currency        string   `json:"currency"`
-		TimesRedeemed   int64    `json:"timesRedeemed"`
-		MaxRedemptions  int64    `json:"maxRedemptions"`
-		ExpiresAt       int64    `json:"expiresAt"`
-		Created         int64    `json:"created"`
+		ID                string   `json:"id"`
+		Code              string   `json:"code"`
+		Active            bool     `json:"active"`
+		CouponID          string   `json:"couponId"`
+		CouponName        string   `json:"couponName"`
+		PercentOff        float64  `json:"percentOff"`
+		AmountOff         int64    `json:"amountOff"`
+		Currency          string   `json:"currency"`
+		TimesRedeemed     int64    `json:"timesRedeemed"`
+		MaxRedemptions    int64    `json:"maxRedemptions"`
+		ExpiresAt         int64    `json:"expiresAt"`
+		Created           int64    `json:"created"`
 		AppliesToProducts []string `json:"appliesToProducts"`
 	}
 
@@ -100,7 +100,7 @@ func (h *PromotionsHandler) ListPromotions(w http.ResponseWriter, r *http.Reques
 	// Build a map of Stripe Product IDs → internal plan/bundle names for display.
 	productNames := h.buildProductNameMap(r.Context())
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"promotions":   promos,
 		"productNames": productNames,
 	})
@@ -236,7 +236,7 @@ func (h *PromotionsHandler) ListEligibleProducts(w http.ResponseWriter, r *http.
 	if items == nil {
 		items = []eligibleItem{}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+	respondWithJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // CreatePromotion creates a new Stripe coupon + promotion code.
@@ -288,7 +288,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 			productIDs, err := h.resolveStripeProducts(ctx, item.Type, objID, currency)
 			if err != nil {
 				slog.Warn("Failed to resolve Stripe product", "type", item.Type, "id", item.ID, "error", err)
-			respondWithError(w, http.StatusInternalServerError, "Failed to resolve Stripe product")
+				respondWithError(w, http.StatusInternalServerError, "Failed to resolve Stripe product")
 				return
 			}
 			stripeProductIDs = append(stripeProductIDs, productIDs...)
@@ -303,9 +303,9 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 		couponParams.Name = stripe.String(req.Code)
 	}
 	if req.PercentOff > 0 {
-		couponParams.PercentOff = stripe.Float64(req.PercentOff)
+		couponParams.PercentOff = new(req.PercentOff)
 	} else {
-		couponParams.AmountOff = stripe.Int64(req.AmountOff)
+		couponParams.AmountOff = new(req.AmountOff)
 		cur := req.Currency
 		if cur == "" {
 			cur = "usd"
@@ -334,7 +334,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 		Code:   stripe.String(req.Code),
 	}
 	if req.MaxRedemptions > 0 {
-		promoParams.MaxRedemptions = stripe.Int64(req.MaxRedemptions)
+		promoParams.MaxRedemptions = new(req.MaxRedemptions)
 	}
 
 	// Expiration date.
@@ -346,7 +346,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 		}
 		// Set to end of day UTC.
 		expiresUnix := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 0, time.UTC).Unix()
-		promoParams.ExpiresAt = stripe.Int64(expiresUnix)
+		promoParams.ExpiresAt = new(expiresUnix)
 	}
 
 	pc, err := promotioncode.New(promoParams)
@@ -357,7 +357,7 @@ func (h *PromotionsHandler) CreatePromotion(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	respondWithJSON(w, http.StatusCreated, map[string]interface{}{
+	respondWithJSON(w, http.StatusCreated, map[string]any{
 		"id":   pc.ID,
 		"code": pc.Code,
 	})
@@ -475,7 +475,7 @@ func (h *PromotionsHandler) UpdatePromotion(w http.ResponseWriter, r *http.Reque
 	// Update promotion code active status if provided.
 	if req.Active != nil {
 		_, err := promotioncode.Update(req.ID, &stripe.PromotionCodeParams{
-			Active: stripe.Bool(*req.Active),
+			Active: new(*req.Active),
 		})
 		apicounter.StripeAPICalls.Add(1)
 		if err != nil {
@@ -503,7 +503,7 @@ func (h *PromotionsHandler) DeactivatePromotion(w http.ResponseWriter, r *http.R
 	}
 
 	_, err := promotioncode.Update(req.ID, &stripe.PromotionCodeParams{
-		Active: stripe.Bool(false),
+		Active: new(false),
 	})
 	apicounter.StripeAPICalls.Add(1)
 	if err != nil {

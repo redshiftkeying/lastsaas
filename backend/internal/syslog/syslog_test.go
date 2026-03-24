@@ -276,7 +276,7 @@ func TestIntegration_LogTenantActivity(t *testing.T) {
 
 	userID := primitive.NewObjectID()
 	tenantID := primitive.NewObjectID()
-	logger.LogTenantActivity(ctx, models.LogMedium, "User changed role", userID, tenantID, "role_change", map[string]interface{}{"oldRole": "user", "newRole": "admin"})
+	logger.LogTenantActivity(ctx, models.LogMedium, "User changed role", userID, tenantID, "role_change", map[string]any{"oldRole": "user", "newRole": "admin"})
 
 	// Wait a moment for DB write
 	time.Sleep(50 * time.Millisecond)

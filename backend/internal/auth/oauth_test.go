@@ -56,7 +56,7 @@ func TestGoogleGetAuthURL(t *testing.T) {
 func TestGoogleExchangeCodeSuccess(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "mock-access-token",
 			"token_type":    "Bearer",
 			"expires_in":    3600,
@@ -179,7 +179,7 @@ func TestGitHubGetAuthURL(t *testing.T) {
 func TestGitHubExchangeCodeSuccess(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "gh-mock-token",
 			"token_type":   "Bearer",
 		})
@@ -251,7 +251,7 @@ func TestMicrosoftGetAuthURL(t *testing.T) {
 func TestMicrosoftExchangeCodeSuccess(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "ms-mock-token",
 			"token_type":   "Bearer",
 		})
@@ -572,4 +572,3 @@ func TestNewTestPasswordService(t *testing.T) {
 		t.Fatal("expected non-nil service")
 	}
 }
-

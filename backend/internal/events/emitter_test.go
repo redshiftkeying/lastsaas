@@ -11,7 +11,7 @@ func TestNoopEmitterEmit(t *testing.T) {
 	emitter.Emit(Event{
 		Type:      EventUserRegistered,
 		Timestamp: time.Now(),
-		Data:      map[string]interface{}{"email": "test@example.com"},
+		Data:      map[string]any{"email": "test@example.com"},
 	})
 }
 
@@ -49,7 +49,7 @@ func TestEventStruct(t *testing.T) {
 	e := Event{
 		Type:      EventUserRegistered,
 		Timestamp: now,
-		Data:      map[string]interface{}{"key": "value"},
+		Data:      map[string]any{"key": "value"},
 	}
 	if e.Type != EventUserRegistered {
 		t.Errorf("expected %s, got %s", EventUserRegistered, e.Type)

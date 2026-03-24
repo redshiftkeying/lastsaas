@@ -11,7 +11,7 @@ import (
 func findConfigDir(t *testing.T) string {
 	t.Helper()
 	dir, _ := os.Getwd()
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		for _, candidate := range []string{
 			filepath.Join(dir, "config"),
 			filepath.Join(dir, "backend", "config"),

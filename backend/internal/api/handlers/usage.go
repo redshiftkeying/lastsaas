@@ -39,8 +39,8 @@ func (h *UsageHandler) RecordUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Type     string                 `json:"type"`
-		Quantity int                    `json:"quantity"`
+		Type     string            `json:"type"`
+		Quantity int               `json:"quantity"`
 		Metadata map[string]string `json:"metadata"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -85,7 +85,7 @@ func (h *UsageHandler) RecordUsage(w http.ResponseWriter, r *http.Request) {
 	defer session.EndSession(ctx)
 
 	insufficient := false
-	_, txErr := session.WithTransaction(ctx, func(sc mongo.SessionContext) (interface{}, error) {
+	_, txErr := session.WithTransaction(ctx, func(sc mongo.SessionContext) (any, error) {
 		// Try subscription credits first.
 		result, err := h.db.Tenants().UpdateOne(sc,
 			bson.M{"_id": tenant.ID, "subscriptionCredits": bson.M{"$gte": int64(req.Quantity)}},
@@ -127,7 +127,7 @@ func (h *UsageHandler) RecordUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"id":       event.ID.Hex(),
 		"type":     event.Type,
 		"quantity": event.Quantity,
@@ -199,7 +199,7 @@ func (h *UsageHandler) GetSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"periodStart":         periodStart.Format(time.RFC3339),
 		"usage":               items,
 		"totalCreditsUsed":    totalUsed,

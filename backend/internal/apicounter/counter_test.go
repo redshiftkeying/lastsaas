@@ -39,12 +39,10 @@ func TestSwapResets(t *testing.T) {
 func TestConcurrentIncrements(t *testing.T) {
 	StripeAPICalls.Store(0)
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			StripeAPICalls.Add(1)
-		}()
+		})
 	}
 	wg.Wait()
 	if got := StripeAPICalls.Load(); got != 100 {

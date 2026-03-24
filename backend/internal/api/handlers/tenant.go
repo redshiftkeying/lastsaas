@@ -118,7 +118,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"members": members})
+	respondWithJSON(w, http.StatusOK, map[string]any{"members": members})
 }
 
 func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +230,7 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 		if memberCount+pendingCount > int64(tenantPlan.UserLimit) {
 			// Over limit — roll back the invitation we just created
 			h.db.Invitations().DeleteOne(r.Context(), bson.M{"_id": invitation.ID})
-			respondWithJSON(w, http.StatusForbidden, map[string]interface{}{
+			respondWithJSON(w, http.StatusForbidden, map[string]any{
 				"error":     fmt.Sprintf("User limit reached. Your plan allows %d users.", tenantPlan.UserLimit),
 				"code":      "USER_LIMIT_REACHED",
 				"userLimit": tenantPlan.UserLimit,
@@ -247,10 +247,9 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	// Auto-adjust seat quantity for per-seat plans
 	if h.stripe != nil && tenant.StripeSubscriptionID != "" && tenantPlan.PricingModel == models.PricingModelPerSeat {
 		memberCount, _ := h.db.TenantMemberships().CountDocuments(r.Context(), bson.M{"tenantId": tenant.ID})
-		newSeats := int(memberCount) + 1 // +1 for incoming member
-		if newSeats < tenantPlan.MinSeats {
-			newSeats = tenantPlan.MinSeats
-		}
+		newSeats := max(
+			// +1 for incoming member
+			int(memberCount)+1, tenantPlan.MinSeats)
 		if err := h.stripe.UpdateSubscriptionQuantity(r.Context(), tenant.StripeSubscriptionID, int64(newSeats)); err != nil {
 			slog.Error("Failed to update seat quantity", "tenantId", tenant.ID.Hex(), "error", err)
 		} else {
@@ -273,7 +272,7 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberInvited,
 		Timestamp: now,
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": tenant.ID.Hex(),
 			"email":    req.Email,
 			"role":     string(req.Role),
@@ -281,7 +280,7 @@ func (h *TenantHandler) InviteMember(w http.ResponseWriter, r *http.Request) {
 	})
 
 	h.syslog.LogTenantActivity(r.Context(), models.LogLow, fmt.Sprintf("Member invited: %s to %s as %s", req.Email, tenant.Name, req.Role),
-		user.ID, tenant.ID, "tenant.member_invited", map[string]interface{}{"email": req.Email, "role": string(req.Role)})
+		user.ID, tenant.ID, "tenant.member_invited", map[string]any{"email": req.Email, "role": string(req.Role)})
 
 	respondWithJSON(w, http.StatusCreated, map[string]string{"message": "Invitation sent"})
 }
@@ -343,10 +342,7 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		var plan models.Plan
 		if h.db.Plans().FindOne(r.Context(), bson.M{"_id": *tenant.PlanID}).Decode(&plan) == nil && plan.PricingModel == models.PricingModelPerSeat {
 			memberCount, _ := h.db.TenantMemberships().CountDocuments(r.Context(), bson.M{"tenantId": tenant.ID})
-			newSeats := int(memberCount)
-			if newSeats < plan.MinSeats {
-				newSeats = plan.MinSeats
-			}
+			newSeats := max(int(memberCount), plan.MinSeats)
 			if newSeats < 1 {
 				newSeats = 1
 			}
@@ -359,12 +355,12 @@ func (h *TenantHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.syslog.LogTenantActivity(r.Context(), models.LogMedium, fmt.Sprintf("Member removed: user %s from tenant %s", targetUserID.Hex(), tenant.Name),
-		currentMembership.UserID, tenant.ID, "tenant.member_removed", map[string]interface{}{"targetUserId": targetUserID.Hex()})
+		currentMembership.UserID, tenant.ID, "tenant.member_removed", map[string]any{"targetUserId": targetUserID.Hex()})
 
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberRemoved,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": tenant.ID.Hex(),
 			"userId":   targetUserID.Hex(),
 		},
@@ -431,7 +427,7 @@ func (h *TenantHandler) ChangeRole(w http.ResponseWriter, r *http.Request) {
 	h.events.Emit(events.Event{
 		Type:      events.EventMemberRoleChanged,
 		Timestamp: time.Now(),
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"tenantId": tenant.ID.Hex(),
 			"userId":   targetUserID.Hex(),
 			"newRole":  string(req.Role),
@@ -505,10 +501,10 @@ func (h *TenantHandler) TransferOwnership(w http.ResponseWriter, r *http.Request
 	h.events.Emit(events.Event{
 		Type:      events.EventOwnershipTransferred,
 		Timestamp: now,
-		Data: map[string]interface{}{
-			"tenantId":    tenant.ID.Hex(),
-			"fromUserId":  currentMembership.UserID.Hex(),
-			"toUserId":    targetUserID.Hex(),
+		Data: map[string]any{
+			"tenantId":   tenant.ID.Hex(),
+			"fromUserId": currentMembership.UserID.Hex(),
+			"toUserId":   targetUserID.Hex(),
 		},
 	})
 
@@ -567,7 +563,7 @@ func (h *TenantHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
 
 	total, _ := h.db.SystemLogs().CountDocuments(r.Context(), filter)
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"logs":  logs,
 		"total": total,
 		"page":  page,

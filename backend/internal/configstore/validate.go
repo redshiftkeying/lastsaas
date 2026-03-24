@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"text/template"
 
@@ -73,10 +74,8 @@ func ValidateEnumValue(value, optionsJSON string) error {
 	if err := json.Unmarshal([]byte(optionsJSON), &strOpts); err != nil {
 		return fmt.Errorf("invalid options JSON: %w", err)
 	}
-	for _, o := range strOpts {
-		if o == value {
-			return nil
-		}
+	if slices.Contains(strOpts, value) {
+		return nil
 	}
 	return fmt.Errorf("value %q is not one of the allowed options: %v", value, strOpts)
 }

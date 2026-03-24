@@ -71,7 +71,7 @@ func (h *PMHandler) GetRetention(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to compute retention data")
 		return
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"granularity": granularity,
 		"periods":     periods,
 		"cohorts":     data,
@@ -118,5 +118,5 @@ func (h *PMHandler) ListEventTypes(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to list event types")
 		return
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"eventTypes": data})
+	respondWithJSON(w, http.StatusOK, map[string]any{"eventTypes": data})
 }

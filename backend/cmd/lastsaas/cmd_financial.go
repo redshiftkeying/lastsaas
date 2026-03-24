@@ -147,7 +147,7 @@ func cmdFinancialSummary() {
 	}
 
 	if jsonOutput {
-		printJSON(map[string]interface{}{
+		printJSON(map[string]any{
 			"totalRevenue":        totalRevenue,
 			"totalTax":            totalTax,
 			"netRevenue":          totalRevenue - totalTax,

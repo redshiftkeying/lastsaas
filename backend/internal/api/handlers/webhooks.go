@@ -81,7 +81,7 @@ func (h *WebhooksHandler) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total, _ := h.db.Webhooks().CountDocuments(ctx, bson.M{"isActive": true})
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"webhooks": result, "total": total})
+	respondWithJSON(w, http.StatusOK, map[string]any{"webhooks": result, "total": total})
 }
 
 // GetWebhook handles GET /api/admin/webhooks/{webhookId}
@@ -104,7 +104,7 @@ func (h *WebhooksHandler) GetWebhook(w http.ResponseWriter, r *http.Request) {
 		options.Find().SetSort(bson.D{{Key: "createdAt", Value: -1}}).SetLimit(20),
 	)
 	if err != nil {
-		respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		respondWithJSON(w, http.StatusOK, map[string]any{
 			"webhook":    hook,
 			"deliveries": []models.WebhookDelivery{},
 		})
@@ -120,7 +120,7 @@ func (h *WebhooksHandler) GetWebhook(w http.ResponseWriter, r *http.Request) {
 		deliveries = []models.WebhookDelivery{}
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+	respondWithJSON(w, http.StatusOK, map[string]any{
 		"webhook":    hook,
 		"deliveries": deliveries,
 	})
@@ -279,7 +279,7 @@ func (h *WebhooksHandler) CreateWebhook(w http.ResponseWriter, r *http.Request) 
 
 	h.syslog.HighWithUser(r.Context(), fmt.Sprintf("Webhook created: %s → %s", req.Name, req.URL), user.ID)
 
-	respondWithJSON(w, http.StatusCreated, map[string]interface{}{"webhook": hook, "secret": rawSecret})
+	respondWithJSON(w, http.StatusCreated, map[string]any{"webhook": hook, "secret": rawSecret})
 }
 
 // UpdateWebhook handles PUT /api/admin/webhooks/{webhookId}
@@ -331,7 +331,7 @@ func (h *WebhooksHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"webhook": hook})
+	respondWithJSON(w, http.StatusOK, map[string]any{"webhook": hook})
 }
 
 // DeleteWebhook handles DELETE /api/admin/webhooks/{webhookId}
@@ -395,7 +395,7 @@ func (h *WebhooksHandler) RegenerateSecret(w http.ResponseWriter, r *http.Reques
 		h.syslog.HighWithUser(r.Context(), fmt.Sprintf("Webhook secret regenerated: %s", whID.Hex()), user.ID)
 	}
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"secret": rawSecret, "secretPreview": preview})
+	respondWithJSON(w, http.StatusOK, map[string]any{"secret": rawSecret, "secretPreview": preview})
 }
 
 // TestWebhook handles POST /api/admin/webhooks/{webhookId}/test
@@ -414,7 +414,7 @@ func (h *WebhooksHandler) TestWebhook(w http.ResponseWriter, r *http.Request) {
 
 	delivery := h.dispatcher.DeliverTest(r.Context(), hook)
 
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"delivery": delivery})
+	respondWithJSON(w, http.StatusOK, map[string]any{"delivery": delivery})
 }
 
 // ListEventTypes handles GET /api/admin/webhooks/event-types
@@ -458,5 +458,5 @@ func (h *WebhooksHandler) ListEventTypes(w http.ResponseWriter, r *http.Request)
 		m := meta[t]
 		types[i] = eventInfo{Type: string(t), Category: m[0], Desc: m[1]}
 	}
-	respondWithJSON(w, http.StatusOK, map[string]interface{}{"eventTypes": types})
+	respondWithJSON(w, http.StatusOK, map[string]any{"eventTypes": types})
 }

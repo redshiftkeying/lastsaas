@@ -45,7 +45,7 @@ func TestIntegration_AdminListTenants(t *testing.T) {
 	defer env.Cleanup()
 	admin, tenant := createAdminEnv(t, env)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		otherUser := testutil.CreateTestUser(t, env.DB, "tenant"+string(rune('a'+i))+"@test.com", "StrongP@ss1!", "Tenant User")
 		testutil.CreateTestTenant(t, env.DB, "Tenant "+string(rune('A'+i)), otherUser.ID, false)
 	}

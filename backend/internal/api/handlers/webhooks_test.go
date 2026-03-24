@@ -99,7 +99,7 @@ func TestIntegration_CreateWebhook_Success(t *testing.T) {
 		t.Errorf("expected 201, got %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	json.NewDecoder(resp.Body).Decode(&result)
 	secret, ok := result["secret"].(string)
 	if !ok || !strings.HasPrefix(secret, "whsec_") {
@@ -311,7 +311,7 @@ func TestIntegration_RegenerateSecret_Success(t *testing.T) {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	json.NewDecoder(resp.Body).Decode(&result)
 	newSecret, ok := result["secret"].(string)
 	if !ok || newSecret == "whsec_old" {

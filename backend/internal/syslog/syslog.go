@@ -213,7 +213,7 @@ func (l *Logger) HighWithUser(ctx context.Context, message string, userID primit
 }
 
 // LogTenantActivity writes a tenant-scoped audit log entry.
-func (l *Logger) LogTenantActivity(ctx context.Context, severity models.LogSeverity, message string, userID, tenantID primitive.ObjectID, action string, metadata map[string]interface{}) {
+func (l *Logger) LogTenantActivity(ctx context.Context, severity models.LogSeverity, message string, userID, tenantID primitive.ObjectID, action string, metadata map[string]any) {
 	if !l.shouldLog(severity) {
 		return
 	}

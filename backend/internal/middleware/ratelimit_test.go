@@ -14,7 +14,7 @@ func TestRateLimiterAllow(t *testing.T) {
 	config := RateLimitConfig{MaxRequests: 3, Window: time.Minute}
 
 	// First 3 requests should be allowed.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		allowed, remaining, _ := rl.Allow("test-key", config)
 		if !allowed {
 			t.Fatalf("request %d should be allowed", i+1)
@@ -99,7 +99,7 @@ func TestRateLimitHandler(t *testing.T) {
 	}, innerHandler)
 
 	// First two requests pass through.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		req := httptest.NewRequest("GET", "/test", nil)
 		rr := httptest.NewRecorder()
 		handler(rr, req)

@@ -75,7 +75,7 @@ func cmdStats() {
 	}
 
 	if jsonOutput {
-		printJSON(map[string]interface{}{
+		printJSON(map[string]any{
 			"users":               userCount,
 			"activeUsers":         activeUsers,
 			"tenants":             tenantCount,

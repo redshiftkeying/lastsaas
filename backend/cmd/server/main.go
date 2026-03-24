@@ -16,6 +16,7 @@ import (
 	"lastsaas/internal/auth"
 	"lastsaas/internal/config"
 	"lastsaas/internal/configstore"
+	"lastsaas/internal/datadog"
 	"lastsaas/internal/db"
 	"lastsaas/internal/email"
 	"lastsaas/internal/events"
@@ -27,7 +28,6 @@ import (
 	stripeservice "lastsaas/internal/stripe"
 	"lastsaas/internal/syslog"
 	"lastsaas/internal/telemetry"
-	"lastsaas/internal/datadog"
 	"lastsaas/internal/version"
 	"lastsaas/internal/webhooks"
 
@@ -397,7 +397,7 @@ func main() {
 	// Version endpoint (public, no auth)
 	api.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(fmt.Sprintf(`{"version":%q}`, version.Current)))
+		w.Write(fmt.Appendf(nil, `{"version":%q}`, version.Current))
 	}).Methods("GET")
 
 	// --- Bootstrap status (always accessible, init is CLI-only) ---

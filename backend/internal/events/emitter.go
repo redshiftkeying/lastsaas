@@ -36,7 +36,7 @@ const (
 type Event struct {
 	Type      EventType
 	Timestamp time.Time
-	Data      map[string]interface{}
+	Data      map[string]any
 }
 
 type Emitter interface {

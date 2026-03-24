@@ -43,11 +43,11 @@ type openAPIOperation struct {
 type openAPISecurity map[string][]string
 
 type openAPIParameter struct {
-	Name        string          `json:"name"`
-	In          string          `json:"in"`
-	Required    bool            `json:"required"`
-	Description string          `json:"description"`
-	Schema      openAPISchema   `json:"schema"`
+	Name        string        `json:"name"`
+	In          string        `json:"in"`
+	Required    bool          `json:"required"`
+	Description string        `json:"description"`
+	Schema      openAPISchema `json:"schema"`
 }
 
 type openAPISchema struct {
@@ -56,12 +56,12 @@ type openAPISchema struct {
 }
 
 type openAPIRequestBody struct {
-	Required bool                          `json:"required"`
-	Content  map[string]openAPIMediaType   `json:"content"`
+	Required bool                        `json:"required"`
+	Content  map[string]openAPIMediaType `json:"content"`
 }
 
 type openAPIMediaType struct {
-	Schema  openAPISchemaRef `json:"schema,omitempty"`
+	Schema  openAPISchemaRef `json:"schema"`
 	Example any              `json:"example,omitempty"`
 }
 
@@ -73,8 +73,8 @@ type openAPISchemaRef struct {
 type openAPIResponses map[string]openAPIResponse
 
 type openAPIResponse struct {
-	Description string                       `json:"description"`
-	Content     map[string]openAPIMediaType   `json:"content,omitempty"`
+	Description string                      `json:"description"`
+	Content     map[string]openAPIMediaType `json:"content,omitempty"`
 }
 
 type openAPIComponents struct {
