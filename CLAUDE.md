@@ -13,6 +13,8 @@ LastSaaS is a complete SaaS boilerplate with:
 - **White-label**: Custom branding, themes, landing pages
 - **Webhooks**: 19 event types with HMAC-SHA256 signing
 - **Health monitoring**: Real-time system metrics and alerting
+- **Telemetry**: Product analytics with Go SDK and REST API
+- **MCP Server**: 32 read-only tools for AI admin access
 
 ## Development Commands
 
@@ -43,6 +45,12 @@ cd backend && go tool cover -html=coverage.out
 
 # Build for production
 cd backend && go build -ldflags="-s -w" -o server ./cmd/server
+
+# Alternative: Use Makefile targets
+cd backend && make test           # Run all tests
+cd backend && make test-unit      # Unit tests only
+cd backend && make test-integration # Integration tests only
+cd backend && make test-coverage  # Generate coverage report
 ```
 
 ### Frontend (React/TypeScript)
@@ -56,6 +64,9 @@ cd frontend && npm run dev
 
 # Type check only
 cd frontend && npx tsc --noEmit
+
+# Run linter
+cd frontend && npm run lint
 
 # Run tests
 cd frontend && npm test
@@ -80,6 +91,14 @@ cd frontend && npm run preview
 cd backend && go run ./cmd/lastsaas setup
 ```
 
+### CI/CD
+
+GitHub Actions workflow (`.github/workflows/ci.yml`):
+- Runs on Go 1.25
+- Builds backend with `CGO_ENABLED=0 go build ./...`
+- Runs tests with coverage (requires `MONGODB_URI` secret)
+- Uploads coverage to Codecov
+
 ## Architecture
 
 ### Directory Structure
@@ -103,6 +122,8 @@ backend/
     stripe/                  # Stripe service wrapper
     syslog/                  # Structured logging with severity levels
     validation/              # Custom validators
+    datadog/                 # DataDog metrics/events/logs integration
+    webhooks/                # Outgoing webhook dispatcher
 frontend/
   src/
     api/client.ts            # Axios client with token refresh
@@ -133,6 +154,7 @@ frontend/
 - `events.Emitter` interface abstracts event publishing
 - `webhooks.Dispatcher` implements the interface
 - Handlers call `emitter.Emit()`; webhooks deliver asynchronously
+- 19 event types defined in `models/webhook.go`
 
 **Credit System**:
 - Dual buckets: subscription credits (reset/accrue) + purchased credits
@@ -143,6 +165,18 @@ frontend/
 - Every authenticated request has a tenant context
 - Handlers must use `middleware.GetTenantFromContext()` for scoping
 - Root tenant (`isRoot: true`) bypasses billing checks
+
+**Telemetry SDK** (`internal/telemetry/service.go`):
+- In-process: `telemetry.Track()` / `TrackBatch()` / `TrackPageView()` (no HTTP overhead)
+- REST API: `POST /telemetry/events` for external clients
+- Auto-instruments auth and billing events
+- 365-day retention via MongoDB TTL
+- Async buffered writes for performance
+
+**DataDog Integration** (`internal/datadog/client.go`):
+- Async-buffered metrics, events, logs, and service checks
+- Submits to DataDog REST API without requiring an agent
+- Environment tagging with app name, hostname, machine ID, region
 
 ### Critical Implementation Details
 
@@ -165,12 +199,12 @@ frontend/
 - DB-backed runtime configuration with caching
 - Auto-reloads every 60 seconds
 - Access via `cfgStore.Get(key)` with dot notation
+- System defaults defined in `seed.go`
 
-**Telemetry SDK** (`internal/telemetry/`):
-- In-process: `telemetry.Track()` (no HTTP overhead)
-- REST API: `POST /telemetry/events` for external clients
-- Auto-instruments auth and billing events
-- 365-day retention via MongoDB TTL
+**System Logging** (`internal/syslog/`):
+- Use `syslog.Logger` for all significant system events
+- Severity levels: critical, high, medium, low, debug
+- Automatic log injection detection with critical alerts
 
 ## Validation Rules
 
@@ -184,16 +218,6 @@ When adding a new collection that accepts user/API writes:
 1. Add `validate` tags to the model struct
 2. Add a schema function to `internal/db/schema.go` and include it in `AllSchemas()`
 3. Add tests in `internal/validation/validate_test.go`
-
-## System Logging
-
-Use `syslog.Logger` for all significant system events. Severity levels: critical, high, medium, low, debug.
-
-Example:
-```go
-sysLogger.Critical(ctx, "Database connection failed")
-sysLogger.High(ctx, "User account locked", "userId", userID)
-```
 
 ## Build Verification
 
@@ -234,7 +258,7 @@ fly deploy -c fly.saas.toml
 1. Create model in `backend/internal/models/`
 2. Add collection accessor in `backend/internal/db/mongodb.go`
 3. Add JSON schema validator in `backend/internal/db/schema.go`
-4. Add validation tests in `backend/internal/validation/validate_test.go`
+4. Add validation tests in `internal/validation/validate_test.go`
 
 ### Adding a New Configuration Variable
 
@@ -244,7 +268,26 @@ fly deploy -c fly.saas.toml
 
 ### Adding a Webhook Event Type
 
-1. Add constant in `backend/internal/events/types.go`
-2. Emit from handler via `emitter.Emit(ctx, event)`
+1. Add constant in `backend/internal/models/webhook.go` (both type and AllWebhookEventTypes)
+2. Emit from handler via `emitter.Emit()` with appropriate event type
 3. Document in `backend/internal/api/handlers/docs.go`
 4. Frontend webhook config automatically lists it
+
+### Using the Telemetry SDK
+
+For in-process event tracking (Go code):
+```go
+// Track a single event
+telemetrySvc.Track(ctx, models.TelemetryEvent{
+    EventName: "feature.used",
+    UserID:    &userID,
+    TenantID:  &tenantID,
+    Properties: map[string]any{
+        "feature_name": "export",
+        "format":       "csv",
+    },
+})
+
+// Track page view
+telemetrySvc.TrackPageView(ctx, sessionID, path, nil)
+```
